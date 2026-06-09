@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IA Agent - Settings</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+    :root {
+      --bg-primary: #0b0b0f;
+      --bg-secondary: rgba(22, 22, 29, 0.75);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --accent-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+      --accent-color: #6366f1;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --success: #10b981;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      overflow-x: hidden;
+      padding: 20px;
+    }
+
+    /* Background Glows */
+    .bg-glow-1 {
+      position: absolute;
+      top: -150px;
+      right: -150px;
+      width: 450px;
+      height: 450px;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.1) 0%, rgba(0,0,0,0) 70%);
+      z-index: -1;
+      pointer-events: none;
+    }
+
+    .bg-glow-2 {
+      position: absolute;
+      bottom: -150px;
+      left: -150px;
+      width: 450px;
+      height: 450px;
+      background: radial-gradient(circle, rgba(236, 72, 153, 0.08) 0%, rgba(0,0,0,0) 70%);
+      z-index: -1;
+      pointer-events: none;
+    }
+
+    .container {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 30px;
+      width: 100%;
+      max-width: 520px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(16px);
+      animation: fadeIn 0.4s ease-out;
+      position: relative;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 16px;
+    }
+
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      background: var(--accent-gradient);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 15px rgba(99, 102, 241, 0.4);
+    }
+
+    .logo-icon svg {
+      fill: #fff;
+      width: 18px;
+      height: 18px;
+    }
+
+    .title {
+      font-size: 22px;
+      font-weight: 700;
+      background: var(--accent-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .section-title {
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--accent-color);
+      margin-bottom: 16px;
+      font-weight: 600;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: var(--text-main);
+    }
+
+    select, input, textarea {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 13px;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    select:focus, input:focus, textarea:focus {
+      border-color: var(--accent-color);
+      box-shadow: 0 0 8px rgba(99, 102, 241, 0.2);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .info-note {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      margin-top: 6px;
+      line-height: 1.4;
+    }
+
+    .btn-save {
+      background: var(--accent-gradient);
+      color: #fff;
+      border: none;
+      padding: 12px 24px;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      width: 100%;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-save:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(99, 102, 241, 0.45);
+    }
+
+    .btn-save:active {
+      transform: translateY(1px);
+    }
+
+    .status-toast {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: rgba(16, 185, 129, 0.9);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 30px;
+      font-size: 12px;
+      font-weight: 500;
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      pointer-events: none;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+
+    .status-toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(15px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-glow-1"></div>
+  <div class="bg-glow-2"></div>
+
+  <div class="container">
+    <div class="header">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+        </svg>
+      </div>
+      <h1 class="title">IA Agent Settings</h1>
+    </div>
+
+    <form id="settings-form">
+      <h3 class="section-title">DeepSeek API Configuration</h3>
+
+      <div class="form-group">
+        <label for="api-key">DeepSeek API Key</label>
+        <input type="password" id="api-key" placeholder="Enter your DeepSeek API Key">
+        <div class="info-note">Your API key is stored locally on your device and is only sent directly to DeepSeek. Leave empty to use Simulated Mock Mode.</div>
+      </div>
+
+      <div class="form-group">
+        <label for="model-name">Model Name</label>
+        <select id="model-name">
+          <option value="deepseek-chat">deepseek-chat (Standard Chat/Coding)</option>
+          <option value="deepseek-reasoner">deepseek-reasoner (Deep Thinking R1)</option>
+        </select>
+        <div class="info-note">Select the DeepSeek model. Default is deepseek-chat.</div>
+      </div>
+
+      <div class="form-group">
+        <label for="system-prompt">System Prompt</label>
+        <textarea id="system-prompt" rows="3" placeholder="You are a helpful AI browser assistant..."></textarea>
+        <div class="info-note">Define how the agent behaves and processes webpage content.</div>
+      </div>
+
+      <button type="submit" class="btn-save">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+          <polyline points="17 21 17 13 7 13 7 21"></polyline>
+          <polyline points="7 3 7 8 15 8"></polyline>
+        </svg>
+        Save Settings
+      </button>
+    </form>
+
+    <div id="toast" class="status-toast">Settings saved successfully!</div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "IA Agent",
+  "version": "1.0.0",
+  "description": "An intelligent browser assistant that summarizes pages and chats with context.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://gemini.google.com/*",
+    "https://claude.ai/*",
+    "https://api.deepseek.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "assets/icon.svg"
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "assets/icon.svg",
+    "48": "assets/icon.svg",
+    "128": "assets/icon.svg"
+  }
+}
