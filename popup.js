@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (lowerUrl.includes("chatgpt.com")) return "ChatGPT";
     if (lowerUrl.includes("gemini.google.com")) return "Gemini";
     if (lowerUrl.includes("claude.ai")) return "Claude";
+    if (lowerUrl.includes("deepseek.com")) return "DeepSeek";
     return null;
   }
 
@@ -173,33 +174,60 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!activeTab) return;
     
     btnCaptureChat.disabled = true;
-    btnCaptureChat.textContent = "Capturing...";
+    btnCaptureChat.textContent = "Summarizing...";
 
     chrome.tabs.sendMessage(activeTab.id, { action: "scrapeChat" }, (response) => {
-      btnCaptureChat.disabled = false;
-      btnCaptureChat.textContent = "Capture Chat";
-
       if (response && response.success) {
         const chatData = response.data;
         if (!chatData.isStructured && (!chatData.rawText || chatData.rawText.trim().length === 0)) {
           appendMessage('agent', `❌ **Failed to capture:** No conversation content could be extracted from this page. Make sure you have messages visible in your chat.`);
+          btnCaptureChat.disabled = false;
+          btnCaptureChat.textContent = "Summarize Chat";
           return;
         }
 
-        const session = {
-          source: chatData.source,
-          isStructured: chatData.isStructured,
-          messages: chatData.messages || [],
-          rawText: chatData.rawText || "",
-          timestamp: Date.now()
-        };
+        let transcriptText = "";
+        if (chatData.isStructured) {
+          transcriptText = chatData.messages.map(m => `${m.role === 'user' ? 'User' : 'AI Assistant'}: ${m.content}`).join('\n\n');
+        } else {
+          transcriptText = chatData.rawText;
+        }
 
-        chrome.storage.local.set({ migratingSession: session }, () => {
-          welcomeScreen.style.display = 'none';
-          appendMessage('agent', `✅ **Conversation Captured!**\n\nI successfully scraped the conversation history from **${chatData.source}** (${chatData.isStructured ? session.messages.length + ' messages' : 'text contents'} saved).\n\nNow, open another AI tab (like Claude, ChatGPT, or Gemini) and click the **"Resume"** button in the banner to migrate your context!`);
-          checkMigrationBanner(activeTab.url);
+        welcomeScreen.style.display = 'none';
+        const loadingBubble = appendLoadingIndicator();
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+
+        chrome.runtime.sendMessage({
+          action: "summarizeTranscriptForTransfer",
+          transcript: transcriptText,
+          source: chatData.source
+        }, (summaryResponse) => {
+          loadingBubble.remove();
+          btnCaptureChat.disabled = false;
+          btnCaptureChat.textContent = "Summarize Chat";
+
+          if (summaryResponse && summaryResponse.success) {
+            const summary = summaryResponse.data;
+
+            const session = {
+              source: chatData.source,
+              summary: summary,
+              timestamp: Date.now()
+            };
+
+            chrome.storage.local.set({ migratingSession: session }, () => {
+              appendMessage('agent', `✅ **Conversation Summarized & Saved!**\n\nI successfully scraped and summarized the conversation history from **${chatData.source}**.\n\n**Summary:**\n\n${summary}\n\n*Now, open another AI tab (like DeepSeek, Gemini, Claude, or ChatGPT) and click the "Inject Context" button in the top banner.*`);
+              checkMigrationBanner(activeTab.url);
+            });
+          } else {
+            const errText = summaryResponse ? summaryResponse.error : "Unknown summarization error";
+            appendMessage('agent', `❌ **Summarization Error:** ${errText}\n\nPlease check your AI provider keys in Settings.`, true);
+          }
+          chatContainer.scrollTop = chatContainer.scrollHeight;
         });
       } else {
+        btnCaptureChat.disabled = false;
+        btnCaptureChat.textContent = "Summarize Chat";
         const err = (response && response.error) || (chrome.runtime.lastError && chrome.runtime.lastError.message) || "Unknown error";
         appendMessage('agent', `❌ **Scraping Error:** ${err}\n\nCould not scrape the chat elements from this webpage. Make sure the page is fully loaded.`);
       }
@@ -215,70 +243,47 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const session = result.migratingSession;
+      const summary = session.summary;
       
-      let transcriptText = "";
-      if (session.isStructured) {
-        transcriptText = session.messages.map(m => `${m.role === 'user' ? 'User' : 'AI Assistant'}: ${m.content}`).join('\n\n');
-      } else {
-        transcriptText = session.rawText;
-      }
-
       btnMigrate.disabled = true;
-      btnMigrate.textContent = "Summarizing...";
+      btnMigrate.textContent = "Injecting...";
 
-      welcomeScreen.style.display = 'none';
-      const loadingBubble = appendLoadingIndicator();
-      chatContainer.scrollTop = chatContainer.scrollHeight;
+      // Copy to Clipboard (backup)
+      navigator.clipboard.writeText(summary).then(() => {
+        console.log("Summary copied to clipboard");
+      }).catch(err => {
+        console.warn("Clipboard copy failed: ", err);
+      });
 
-      chrome.runtime.sendMessage({
-        action: "summarizeTranscriptForTransfer",
-        transcript: transcriptText,
-        source: session.source
-      }, (response) => {
-        loadingBubble.remove();
+      // Detect AI page and inject
+      const currentAI = getAIPageName(activeTab.url);
+      if (currentAI && currentAI !== session.source) {
+        chrome.tabs.sendMessage(activeTab.id, {
+          action: "injectPrompt",
+          text: summary
+        }, (injectResponse) => {
+          btnMigrate.disabled = false;
+          btnMigrate.textContent = "Inject Context";
 
-        if (response && response.success) {
-          const summary = response.data;
-
-          // Copy to Clipboard (backup)
-          navigator.clipboard.writeText(summary).then(() => {
-            console.log("Summary copied to clipboard");
-          }).catch(err => {
-            console.warn("Clipboard copy failed: ", err);
+          chrome.storage.local.remove(['migratingSession'], () => {
+            migrationBanner.style.display = 'none';
           });
 
-          // Detect AI page and inject
-          const currentAI = getAIPageName(activeTab.url);
-          if (currentAI && currentAI !== session.source) {
-            chrome.tabs.sendMessage(activeTab.id, {
-              action: "injectPrompt",
-              text: summary
-            }, (injectResponse) => {
-              chrome.storage.local.remove(['migratingSession'], () => {
-                migrationBanner.style.display = 'none';
-              });
-
-              if (injectResponse && injectResponse.success && injectResponse.injected) {
-                appendMessage('agent', `🚀 **Context Migrated to ${currentAI}!**\n\nI generated a context summary from your previous **${session.source}** session and auto-injected it into the chat prompt box.\n\n*(It is also copied to your clipboard as a backup)*\n\nHere is the summary sent:\n\n${summary}`);
-              } else {
-                appendMessage('agent', `📋 **Context Copied to Clipboard!**\n\nI generated the summary from **${session.source}** but could not auto-inject it into this page's prompt editor.\n\n**Please paste it manually** using **Ctrl+V** in the chatbox.\n\nHere is the summary:\n\n${summary}`);
-              }
-            });
+          if (injectResponse && injectResponse.success && injectResponse.injected) {
+            appendMessage('agent', `🚀 **Context Migrated to ${currentAI}!**\n\nI injected the context summary of your previous **${session.source}** session into the chat prompt box.\n\n*(It is also copied to your clipboard as a backup)*`);
           } else {
-            chrome.storage.local.remove(['migratingSession'], () => {
-              migrationBanner.style.display = 'none';
-            });
-            appendMessage('agent', `📋 **Context Copied to Clipboard!**\n\nI generated a detailed migration summary of your **${session.source}** session and copied it to your clipboard.\n\nYou can now open Claude, Gemini, or ChatGPT and paste (**Ctrl+V**) to continue your task.\n\nHere is the summary:\n\n${summary}`);
+            appendMessage('agent', `📋 **Context Copied to Clipboard!**\n\nI generated the summary from **${session.source}** but could not auto-inject it. **Please press Ctrl+V** in the chatbox to paste it manually.`);
           }
-        } else {
-          const errText = response ? response.error : "Unknown summarization error";
-          appendMessage('agent', `❌ **Summarization Error:** ${errText}\n\nPlease check your AI provider keys in Settings.`, true);
-          
-          btnMigrate.disabled = false;
-          btnMigrate.textContent = "Try Again";
-        }
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-      });
+        });
+      } else {
+        btnMigrate.disabled = false;
+        btnMigrate.textContent = "Inject Context";
+
+        chrome.storage.local.remove(['migratingSession'], () => {
+          migrationBanner.style.display = 'none';
+        });
+        appendMessage('agent', `📋 **Context Copied to Clipboard!**\n\nI copied the context summary of your **${session.source}** session to your clipboard.\n\nYou can now paste it (**Ctrl+V**) manually into the chat box.`);
+      }
     });
   });
 

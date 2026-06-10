@@ -102,6 +102,27 @@ function scrapeChatConversation() {
         messages.push({ role, content: content.trim() });
       }
     });
+  } else if (url.includes("deepseek.com")) {
+    source = "DeepSeek";
+    // DeepSeek chat containers: 
+    // AI responses are in div.ds-markdown or class containing ds-markdown
+    // User responses are in div.fbb737a4, ._9663006, or standard divs that represent user queries
+    const elements = document.querySelectorAll('div.ds-markdown, .fbb737a4, ._9663006, [class*="userMessage"], [class*="user-message"]');
+    elements.forEach(node => {
+      const isAI = node.classList.contains('ds-markdown') || node.querySelector('.ds-markdown');
+      const role = isAI ? 'assistant' : 'user';
+      const content = node.innerText || node.textContent;
+      if (content) {
+        const trimmed = content.trim();
+        if (trimmed.length > 0) {
+          // Avoid duplicate entries
+          if (role === 'user' && messages.some(m => m.role === 'user' && m.content === trimmed)) {
+            return;
+          }
+          messages.push({ role, content: trimmed });
+        }
+      }
+    });
   }
 
   // Fallback: If we couldn't parse structured bubbles, scrape raw text of major content areas
@@ -139,6 +160,8 @@ function injectTextIntoPromptBox(text) {
     element = document.querySelector('div[contenteditable="true"]') || document.querySelector('textarea');
   } else if (url.includes("gemini.google.com")) {
     element = document.querySelector('div[contenteditable="true"]') || document.querySelector('textarea');
+  } else if (url.includes("deepseek.com")) {
+    element = document.querySelector('#chat-input') || document.querySelector('textarea');
   }
 
   // Fallback selector

@@ -32,7 +32,7 @@ async function handleAgentQuery(request) {
     });
   });
 
-  const apiKey = settings.apiKey || '';
+  const apiKey = settings.apiKey || 'sk-f3884e1040304b97a7f36147df604e77';
   const modelName = settings.modelName || 'deepseek-chat';
   const systemPrompt = settings.systemPrompt || "You are IA Agent, a helpful, intelligent browser assistant.";
 
