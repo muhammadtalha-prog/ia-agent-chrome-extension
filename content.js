@@ -123,6 +123,25 @@ function scrapeChatConversation() {
         }
       }
     });
+  } else if (url.includes("streamlit.app") || url.includes("localhost:8501")) {
+    source = "StreamlitChat";
+    const elements = document.querySelectorAll('[data-testid="stChatMessage"]');
+    elements.forEach(node => {
+      const contentNode = node.querySelector('[data-testid="stChatMessageContent"]');
+      const content = contentNode ? contentNode.innerText || contentNode.textContent : (node.innerText || node.textContent);
+      
+      const avatarNode = node.querySelector('[data-testid="stAvatar"]');
+      let role = 'assistant';
+      if (avatarNode) {
+        const ariaLabel = avatarNode.getAttribute('aria-label') || "";
+        if (ariaLabel.toLowerCase().includes('user') || avatarNode.innerHTML.toLowerCase().includes('user')) {
+          role = 'user';
+        }
+      }
+      if (content) {
+        messages.push({ role, content: content.trim() });
+      }
+    });
   }
 
   // Fallback: If we couldn't parse structured bubbles, scrape raw text of major content areas
@@ -162,6 +181,8 @@ function injectTextIntoPromptBox(text) {
     element = document.querySelector('div[contenteditable="true"]') || document.querySelector('textarea');
   } else if (url.includes("deepseek.com")) {
     element = document.querySelector('#chat-input') || document.querySelector('textarea');
+  } else if (url.includes("streamlit.app") || url.includes("localhost:8501")) {
+    element = document.querySelector('textarea[data-testid="stChatInputTextArea"]') || document.querySelector('textarea');
   }
 
   // Fallback selector

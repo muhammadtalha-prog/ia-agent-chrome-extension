@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (lowerUrl.includes("gemini.google.com")) return "Gemini";
     if (lowerUrl.includes("claude.ai")) return "Claude";
     if (lowerUrl.includes("deepseek.com")) return "DeepSeek";
+    if (lowerUrl.includes("streamlit.app") || lowerUrl.includes("localhost:8501")) return "StreamlitChat";
     return null;
   }
 

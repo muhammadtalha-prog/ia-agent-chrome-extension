@@ -10,11 +10,7 @@
     "clipboardWrite"
   ],
   "host_permissions": [
-    "https://chatgpt.com/*",
-    "https://gemini.google.com/*",
-    "https://claude.ai/*",
-    "https://api.deepseek.com/*",
-    "https://*.deepseek.com/*"
+    "<all_urls>"
   ],
   "action": {
     "default_popup": "popup.html",

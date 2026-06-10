@@ -33,7 +33,7 @@ async function handleAgentQuery(request) {
     });
   });
 
-  const apiKey = settings.apiKey || 'sk-f3884e1040304b97a7f36147df604e77';
+  const apiKey = settings.apiKey !== undefined ? settings.apiKey : 'sk-f3884e1040304b97a7f36147df604e77';
   const apiUrl = settings.apiUrl || 'https://api.deepseek.com/chat/completions';
   const modelName = settings.modelName || 'deepseek-chat';
   const systemPrompt = settings.systemPrompt || "You are IA Agent, a helpful, intelligent browser assistant.";
@@ -122,7 +122,10 @@ async function callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, apiK
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    const message = errorData.error?.message || errorData.message || response.statusText;
+    let message = errorData.error?.message || errorData.message || response.statusText;
+    if (message.toLowerCase().includes("insufficient balance") || response.status === 402) {
+      message = "Insufficient Balance. Your API key has run out of funds. Please add funds to your account, or configure the extension to use a free local provider like Ollama in Settings.";
+    }
     throw new Error(`API Error: ${message}`);
   }
 
