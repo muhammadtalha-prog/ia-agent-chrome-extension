@@ -123,7 +123,7 @@ async function callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, apiK
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     const message = errorData.error?.message || errorData.message || response.statusText;
-    throw new Error(`DeepSeek API Error: ${message}`);
+    throw new Error(`API Error: ${message}`);
   }
 
   const data = await response.json();
