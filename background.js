@@ -25,6 +25,7 @@ async function handleAgentQuery(request) {
   const settings = await new Promise((resolve) => {
     chrome.storage.local.get([
       'apiKey',
+      'apiUrl',
       'modelName',
       'systemPrompt'
     ], (items) => {
@@ -33,6 +34,7 @@ async function handleAgentQuery(request) {
   });
 
   const apiKey = settings.apiKey || 'sk-f3884e1040304b97a7f36147df604e77';
+  const apiUrl = settings.apiUrl || 'https://api.deepseek.com/chat/completions';
   const modelName = settings.modelName || 'deepseek-chat';
   const systemPrompt = settings.systemPrompt || "You are IA Agent, a helpful, intelligent browser assistant.";
 
@@ -43,7 +45,7 @@ async function handleAgentQuery(request) {
     return generateMockResponse(prompt, pageContext);
   }
 
-  return callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, activeKey, systemPrompt);
+  return callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, activeKey, systemPrompt, apiUrl);
 }
 
 // Generates task context summary to copy/paste to new tab
@@ -75,8 +77,8 @@ Write the summary now:`;
 }
 
 // Call DeepSeek Chat Endpoint (OpenAI Compatible)
-async function callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, apiKey, systemPrompt) {
-  const url = "https://api.deepseek.com/chat/completions";
+async function callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, apiKey, systemPrompt, apiUrl) {
+  const url = apiUrl || "https://api.deepseek.com/chat/completions";
   
   const messages = [
     { role: "system", content: systemPrompt }

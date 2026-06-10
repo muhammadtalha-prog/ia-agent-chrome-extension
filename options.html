@@ -223,21 +223,24 @@
     </div>
 
     <form id="settings-form">
-      <h3 class="section-title">DeepSeek API Configuration</h3>
+      <h3 class="section-title">API Provider Configuration</h3>
 
       <div class="form-group">
-        <label for="api-key">DeepSeek API Key</label>
-        <input type="password" id="api-key" placeholder="Enter your DeepSeek API Key">
-        <div class="info-note">Your API key is stored locally on your device and is only sent directly to DeepSeek. Leave empty to use Simulated Mock Mode.</div>
+        <label for="api-key">API Key</label>
+        <input type="password" id="api-key" placeholder="Enter your API Key">
+        <div class="info-note">Your API key is stored locally on your device. Leave empty to use Simulated Mock Mode.</div>
+      </div>
+
+      <div class="form-group">
+        <label for="api-url">API Base URL</label>
+        <input type="text" id="api-url" placeholder="https://api.deepseek.com/chat/completions">
+        <div class="info-note">OpenAI-compatible chat completions endpoint (e.g., `https://api.deepseek.com/chat/completions` or `https://api.groq.com/openai/v1/chat/completions`).</div>
       </div>
 
       <div class="form-group">
         <label for="model-name">Model Name</label>
-        <select id="model-name">
-          <option value="deepseek-chat">deepseek-chat (Standard Chat/Coding)</option>
-          <option value="deepseek-reasoner">deepseek-reasoner (Deep Thinking R1)</option>
-        </select>
-        <div class="info-note">Select the DeepSeek model. Default is deepseek-chat.</div>
+        <input type="text" id="model-name" placeholder="deepseek-chat">
+        <div class="info-note">The target model identifier (e.g., `deepseek-chat`, `deepseek-reasoner`, `llama-3.3-70b-versatile`).</div>
       </div>
 
       <div class="form-group">

@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   const apiKeyInput = document.getElementById('api-key');
-  const modelSelect = document.getElementById('model-name');
+  const apiUrlInput = document.getElementById('api-url');
+  const modelInput = document.getElementById('model-name');
   const systemPromptInput = document.getElementById('system-prompt');
   const settingsForm = document.getElementById('settings-form');
   const toast = document.getElementById('toast');
@@ -10,11 +11,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load saved settings
   chrome.storage.local.get([
     'apiKey',
+    'apiUrl',
     'modelName',
     'systemPrompt'
   ], (items) => {
     apiKeyInput.value = items.apiKey || '';
-    modelSelect.value = items.modelName || 'deepseek-chat';
+    apiUrlInput.value = items.apiUrl || 'https://api.deepseek.com/chat/completions';
+    modelInput.value = items.modelName || 'deepseek-chat';
     systemPromptInput.value = items.systemPrompt || defaultPrompt;
   });
 
@@ -24,7 +27,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const settings = {
       apiKey: apiKeyInput.value.trim(),
-      modelName: modelSelect.value,
+      apiUrl: apiUrlInput.value.trim(),
+      modelName: modelInput.value.trim(),
       systemPrompt: systemPromptInput.value.trim()
     };
 
