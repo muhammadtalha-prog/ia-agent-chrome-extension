@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function checkMigrationBanner(currentUrl) {
-    chrome.storage.local.get(['migratingSession'], (result) => {
+    chrome.storage.session.get(['migratingSession'], (result) => {
       if (result.migratingSession) {
         const session = result.migratingSession;
         const currentAI = getAIPageName(currentUrl);
@@ -100,16 +100,28 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 2. Load Chat History for Active Tab or General
-  chrome.storage.local.get(['globalChatHistory'], (result) => {
+  chrome.storage.session.get(['globalChatHistory'], (result) => {
     if (result.globalChatHistory && result.globalChatHistory.length > 0) {
-      chatHistory = result.globalChatHistory;
-      welcomeScreen.style.display = 'none';
-      renderHistory();
+      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      chatHistory = result.globalChatHistory.filter(msg => {
+        return !msg.timestamp || msg.timestamp > sevenDaysAgo;
+      });
+      if (chatHistory.length > 100) {
+        chatHistory = chatHistory.slice(-100);
+      }
+      
+      // Update memory cache immediately
+      chrome.storage.session.set({ globalChatHistory: chatHistory });
+      
+      if (chatHistory.length > 0) {
+        welcomeScreen.style.display = 'none';
+        renderHistory();
+      }
     }
   });
 
-  // Dynamically inject content.js if missing
-  function injectContentScript(tabId) {
+  // Dynamically inject content.js if missing and retrieve page content
+  function injectContentScript(tabId, retries = 3) {
     chrome.scripting.executeScript({
       target: { tabId: tabId },
       files: ['content.js']
@@ -118,16 +130,29 @@ document.addEventListener('DOMContentLoaded', () => {
         console.warn("Could not inject content script: ", chrome.runtime.lastError.message);
         setSystemPageMode();
       } else {
-        // Retry content pull
-        chrome.tabs.sendMessage(tabId, { action: "getPageContent" }, (retryResponse) => {
-          if (retryResponse && retryResponse.success) {
-            activeTabContext = retryResponse.data;
-            statusDot.className = "status-dot";
-            statusText.textContent = "Context Active";
-          } else {
-            setSystemPageMode();
-          }
-        });
+        // Wait 150ms before communicating to avoid race condition with listener registration
+        setTimeout(() => {
+          attemptContentPull(tabId, retries);
+        }, 150);
+      }
+    });
+  }
+
+  function attemptContentPull(tabId, retriesLeft) {
+    chrome.tabs.sendMessage(tabId, { action: "getPageContent" }, (response) => {
+      if (chrome.runtime.lastError || !response || !response.success) {
+        if (retriesLeft > 1) {
+          console.log(`Content pull failed. Retrying... (${retriesLeft - 1} left)`);
+          setTimeout(() => {
+            attemptContentPull(tabId, retriesLeft - 1);
+          }, 150);
+        } else {
+          setSystemPageMode();
+        }
+      } else {
+        activeTabContext = response.data;
+        statusDot.className = "status-dot";
+        statusText.textContent = "Context Active";
       }
     });
   }
@@ -175,7 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!activeTab) return;
     
     btnCaptureChat.disabled = true;
-    btnCaptureChat.textContent = "Summarizing...";
+    btnCaptureChat.textContent = "Scraping...";
 
     chrome.tabs.sendMessage(activeTab.id, { action: "scrapeChat" }, (response) => {
       if (response && response.success) {
@@ -196,13 +221,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
         welcomeScreen.style.display = 'none';
         const loadingBubble = appendLoadingIndicator();
+        const statusTextEl = loadingBubble.querySelector('.loading-status-text');
+        const cancelBtn = loadingBubble.querySelector('.btn-cancel-operation');
+        
+        statusTextEl.textContent = "Structuring chat elements...";
         chatContainer.scrollTop = chatContainer.scrollHeight;
+        
+        setTimeout(() => {
+          if (statusTextEl && statusTextEl.isConnected) {
+            statusTextEl.textContent = "Generating summary with API (Est. 5s)...";
+          }
+        }, 800);
+
+        cancelBtn.addEventListener('click', () => {
+          chrome.runtime.sendMessage({ action: "cancelQuery" });
+          loadingBubble.remove();
+          btnCaptureChat.disabled = false;
+          btnCaptureChat.textContent = "Summarize Chat";
+          appendMessage('agent', `❌ **Summarization cancelled by user.**`, true);
+          chatContainer.scrollTop = chatContainer.scrollHeight;
+        });
 
         chrome.runtime.sendMessage({
           action: "summarizeTranscriptForTransfer",
           transcript: transcriptText,
           source: chatData.source
         }, (summaryResponse) => {
+          if (!loadingBubble.isConnected) return;
+          
           loadingBubble.remove();
           btnCaptureChat.disabled = false;
           btnCaptureChat.textContent = "Summarize Chat";
@@ -216,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
               timestamp: Date.now()
             };
 
-            chrome.storage.local.set({ migratingSession: session }, () => {
+            chrome.storage.session.set({ migratingSession: session }, () => {
               appendMessage('agent', `✅ **Conversation Summarized & Saved!**\n\nI successfully scraped and summarized the conversation history from **${chatData.source}**.\n\n**Summary:**\n\n${summary}\n\n*Now, open another AI tab (like DeepSeek, Gemini, Claude, or ChatGPT) and click the "Inject Context" button in the top banner.*`);
               checkMigrationBanner(activeTab.url);
             });
@@ -235,9 +281,47 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // Copy helper with navigator clipboard and fallback
+  function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text)
+        .catch(err => {
+          console.warn("Navigator clipboard write failed. Trying fallback.", err);
+          return fallbackCopyToClipboard(text);
+        });
+    } else {
+      return fallbackCopyToClipboard(text);
+    }
+  }
+
+  function fallbackCopyToClipboard(text) {
+    return new Promise((resolve, reject) => {
+      try {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.top = "0";
+        textArea.style.left = "0";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (successful) {
+          resolve();
+        } else {
+          reject(new Error("fallback copy command returned false"));
+        }
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
   // Migrate context to current page
   btnMigrate.addEventListener('click', () => {
-    chrome.storage.local.get(['migratingSession'], (result) => {
+    chrome.storage.session.get(['migratingSession'], (result) => {
       if (!result.migratingSession) {
         migrationBanner.style.display = 'none';
         return;
@@ -250,11 +334,14 @@ document.addEventListener('DOMContentLoaded', () => {
       btnMigrate.textContent = "Injecting...";
 
       // Copy to Clipboard (backup)
-      navigator.clipboard.writeText(summary).then(() => {
-        console.log("Summary copied to clipboard");
-      }).catch(err => {
-        console.warn("Clipboard copy failed: ", err);
-      });
+      copyToClipboard(summary)
+        .then(() => {
+          console.log("Summary copied to clipboard");
+        })
+        .catch(err => {
+          console.error("Clipboard copy failed: ", err);
+          appendMessage('agent', `⚠️ **Clipboard Copy Failed:** I could not copy the context to your clipboard automatically.\n\n*Error: ${err.message}*\n\n**Please manually select and copy the text below:**\n\n\`\`\`text\n${summary}\n\`\`\``, true);
+        });
 
       // Detect AI page and inject
       const currentAI = getAIPageName(activeTab.url);
@@ -266,7 +353,7 @@ document.addEventListener('DOMContentLoaded', () => {
           btnMigrate.disabled = false;
           btnMigrate.textContent = "Inject Context";
 
-          chrome.storage.local.remove(['migratingSession'], () => {
+          chrome.storage.session.remove(['migratingSession'], () => {
             migrationBanner.style.display = 'none';
           });
 
@@ -280,7 +367,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btnMigrate.disabled = false;
         btnMigrate.textContent = "Inject Context";
 
-        chrome.storage.local.remove(['migratingSession'], () => {
+        chrome.storage.session.remove(['migratingSession'], () => {
           migrationBanner.style.display = 'none';
         });
         appendMessage('agent', `📋 **Context Copied to Clipboard!**\n\nI copied the context summary of your **${session.source}** session to your clipboard.\n\nYou can now paste it (**Ctrl+V**) manually into the chat box.`);
@@ -319,7 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Add user message to UI and history
     appendMessage('user', text);
-    chatHistory.push({ role: 'user', content: text });
+    chatHistory.push({ role: 'user', content: text, timestamp: Date.now() });
     
     // Save history
     saveHistory();
@@ -330,7 +417,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Append loading bubble
     const loadingBubble = appendLoadingIndicator();
+    const statusTextEl = loadingBubble.querySelector('.loading-status-text');
+    const cancelBtn = loadingBubble.querySelector('.btn-cancel-operation');
+
+    statusTextEl.textContent = "Analyzing context...";
     chatContainer.scrollTop = chatContainer.scrollHeight;
+
+    setTimeout(() => {
+      if (statusTextEl && statusTextEl.isConnected) {
+        statusTextEl.textContent = "Calling API (Est. 5-10s)...";
+      }
+    }, 800);
+
+    cancelBtn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: "cancelQuery" });
+      loadingBubble.remove();
+      appendMessage('agent', `❌ **Request cancelled by user.**`, true);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    });
 
     // Call background service worker to fetch response
     chrome.runtime.sendMessage({
@@ -339,13 +443,16 @@ document.addEventListener('DOMContentLoaded', () => {
       pageContext: activeTabContext,
       chatHistory: chatHistory.slice(0, -1) // Send history excluding current message
     }, (response) => {
+      if (!loadingBubble.isConnected) return;
+
       // Remove loading indicator
       loadingBubble.remove();
 
       if (response && response.success) {
+        statusTextEl.textContent = "Processing response...";
         const agentText = response.data;
         appendMessage('agent', agentText);
-        chatHistory.push({ role: 'assistant', content: agentText });
+        chatHistory.push({ role: 'assistant', content: agentText, timestamp: Date.now() });
         saveHistory();
       } else {
         const errorText = response ? response.error : "Unknown connection error";
@@ -355,10 +462,25 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Save history to storage
+  // Save history to storage with debouncer (1.5s)
+  let saveTimeout = null;
   function saveHistory() {
-    chrome.storage.local.set({ globalChatHistory: chatHistory });
+    if (saveTimeout) {
+      clearTimeout(saveTimeout);
+    }
+    saveTimeout = setTimeout(() => {
+      chrome.storage.session.set({ globalChatHistory: chatHistory });
+      saveTimeout = null;
+    }, 1500);
   }
+
+  // Synchronous write on popup closing unload
+  window.addEventListener('unload', () => {
+    if (saveTimeout) {
+      clearTimeout(saveTimeout);
+      chrome.storage.session.set({ globalChatHistory: chatHistory });
+    }
+  });
 
   // Message UI Helpers
   function appendMessage(role, text, isError = false) {
@@ -384,10 +506,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingDiv = document.createElement('div');
     loadingDiv.className = 'message agent';
     loadingDiv.innerHTML = `
-      <div class="typing-indicator">
-        <div class="typing-dot"></div>
-        <div class="typing-dot"></div>
-        <div class="typing-dot"></div>
+      <div class="typing-indicator-container">
+        <div class="typing-indicator">
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+        </div>
+        <span class="loading-status-text">Processing...</span>
+        <button class="btn-cancel-operation" title="Cancel request">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
       </div>
     `;
     chatContainer.appendChild(loadingDiv);
@@ -395,41 +526,51 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderHistory() {
+    // Clear DOM of previous messages to prevent duplicate rendering
+    const messageElements = chatContainer.querySelectorAll('.message');
+    messageElements.forEach(el => el.remove());
+
     chatHistory.forEach(msg => {
       appendMessage(msg.role === 'assistant' ? 'agent' : 'user', msg.content);
     });
   }
 
-  // Simple clean HTML Markdown parser for extension context
+  // Simple clean HTML Markdown parser in O(N) state machine (no regex O(n^2) complexity)
   function formatMarkdown(text) {
     if (!text) return "";
-    let html = escapeHtml(text);
+    let escaped = escapeHtml(text);
     
-    // Code blocks: ```language ... ```
-    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-      return `<pre><code class="language-${lang}">${code.trim()}</code></pre>`;
-    });
-    
-    // Inline code: `code`
-    html = html.replace(/`([^`]+)`/g, (match, code) => {
-      return `<code>${code}</code>`;
-    });
-    
-    // Bold: **text**
-    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    
-    // Italic: *text*
-    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-
-    // Bullet points (split by newline and detect start of line with list markers)
-    const lines = html.split('\n');
+    const lines = escaped.split('\n');
+    let html = '';
+    let inCodeBlock = false;
+    let codeLang = '';
+    let codeContent = [];
     let inList = false;
-    let listItems = [];
     
-    const processedLines = lines.map(line => {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
       const trimmed = line.trim();
-      const isBullet = trimmed.startsWith('&amp;middot; ') || trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('&bull; ');
       
+      // Code block check
+      if (trimmed.startsWith('```')) {
+        if (inCodeBlock) {
+          html += `<pre><code class="language-${codeLang}">${codeContent.join('\n')}</code></pre>`;
+          inCodeBlock = false;
+          codeContent = [];
+        } else {
+          inCodeBlock = true;
+          codeLang = trimmed.substring(3).trim();
+        }
+        continue;
+      }
+      
+      if (inCodeBlock) {
+        codeContent.push(line);
+        continue;
+      }
+      
+      // Bullet lists
+      const isBullet = trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('&amp;middot; ') || trimmed.startsWith('&bull; ');
       if (isBullet) {
         let content = trimmed;
         if (trimmed.startsWith('- ')) content = trimmed.substring(2);
@@ -437,37 +578,83 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (trimmed.startsWith('&amp;middot; ')) content = trimmed.substring(13);
         else if (trimmed.startsWith('&bull; ')) content = trimmed.substring(7);
         
+        content = formatInlineMarkdown(content);
+        
         if (!inList) {
           inList = true;
-          return `<ul><li>${content}</li>`;
+          html += '<ul>';
         }
-        return `<li>${content}</li>`;
+        html += `<li>${content}</li>`;
+        continue;
       } else {
         if (inList) {
           inList = false;
-          return `</ul>${line}`;
+          html += '</ul>';
         }
-        return line;
       }
-    });
-
-    if (inList) {
-      processedLines.push('</ul>');
+      
+      if (trimmed === '') {
+        continue;
+      }
+      
+      const formattedLine = formatInlineMarkdown(line);
+      html += `<p>${formattedLine}</p>`;
     }
-
-    html = processedLines.join('\n');
     
-    // Paragraph paragraphs (split double newline and wrap in p if not already in ul/pre)
-    html = html.split('\n\n').map(paragraph => {
-      const trimmed = paragraph.trim();
-      if (!trimmed) return "";
-      if (trimmed.startsWith('<ul') || trimmed.startsWith('<li') || trimmed.startsWith('<pre') || trimmed.startsWith('</ul')) {
-        return paragraph;
-      }
-      return `<p>${paragraph}</p>`;
-    }).join('');
-
+    if (inCodeBlock) {
+      html += `<pre><code class="language-${codeLang}">${codeContent.join('\n')}</code></pre>`;
+    }
+    if (inList) {
+      html += '</ul>';
+    }
+    
     return html;
+  }
+
+  function formatInlineMarkdown(text) {
+    let result = '';
+    let i = 0;
+    const len = text.length;
+    
+    while (i < len) {
+      // Bold: **
+      if (i + 1 < len && text[i] === '*' && text[i+1] === '*') {
+        const endIdx = text.indexOf('**', i + 2);
+        if (endIdx !== -1) {
+          const inner = text.substring(i + 2, endIdx);
+          result += `<strong>${formatInlineMarkdown(inner)}</strong>`;
+          i = endIdx + 2;
+          continue;
+        }
+      }
+      
+      // Italic: *
+      if (text[i] === '*') {
+        const endIdx = text.indexOf('*', i + 1);
+        if (endIdx !== -1 && text[endIdx + 1] !== '*') {
+          const inner = text.substring(i + 1, endIdx);
+          result += `<em>${formatInlineMarkdown(inner)}</em>`;
+          i = endIdx + 1;
+          continue;
+        }
+      }
+      
+      // Inline code: `
+      if (text[i] === '`') {
+        const endIdx = text.indexOf('`', i + 1);
+        if (endIdx !== -1) {
+          const inner = text.substring(i + 1, endIdx);
+          result += `<code>${inner}</code>`;
+          i = endIdx + 1;
+          continue;
+        }
+      }
+      
+      result += text[i];
+      i++;
+    }
+    
+    return result;
   }
 
   function escapeHtml(unsafe) {

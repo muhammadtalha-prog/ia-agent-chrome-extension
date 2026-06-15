@@ -554,3 +554,38 @@ textarea::placeholder {
   transform: scale(1.05);
   box-shadow: var(--glow-shadow);
 }
+
+/* Typing Indicator & Progress Updates Styling */
+.typing-indicator-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.loading-status-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-grow: 1;
+}
+
+.btn-cancel-operation {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.btn-cancel-operation:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}

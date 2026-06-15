@@ -1,4 +1,5 @@
-// Background service worker for IA Agent (DeepSeek Only Edition)
+// Background service worker for IA Agent
+let currentAbortController = null;
 
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -15,11 +16,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true; // Keep channel open
   }
+
+  if (request.action === "cancelQuery") {
+    if (currentAbortController) {
+      currentAbortController.abort();
+      currentAbortController = null;
+    }
+    sendResponse({ success: true });
+    return true;
+  }
 });
 
-// Orchestrates requests using DeepSeek API
+// Orchestrates requests using API/Mock providers
 async function handleAgentQuery(request) {
   const { prompt, pageContext, chatHistory } = request;
+
+  // Cancel any existing request before starting a new one
+  if (currentAbortController) {
+    currentAbortController.abort();
+  }
+
+  currentAbortController = new AbortController();
+  const signal = currentAbortController.signal;
 
   // Retrieve settings
   const settings = await new Promise((resolve) => {
@@ -33,19 +51,41 @@ async function handleAgentQuery(request) {
     });
   });
 
-  const apiKey = settings.apiKey !== undefined ? settings.apiKey : 'sk-f3884e1040304b97a7f36147df604e77';
+  const apiKey = settings.apiKey !== undefined ? settings.apiKey : '';
   const apiUrl = settings.apiUrl || 'https://api.deepseek.com/chat/completions';
   const modelName = settings.modelName || 'deepseek-chat';
   const systemPrompt = settings.systemPrompt || "You are IA Agent, a helpful, intelligent browser assistant.";
 
-  let activeKey = apiKey;
+  const activeKey = apiKey;
 
   // If still no key, fallback to simulated mock responses
   if (!activeKey) {
-    return generateMockResponse(prompt, pageContext);
+    return generateMockResponse(prompt, pageContext, signal);
   }
 
-  return callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, activeKey, systemPrompt, apiUrl);
+  // Setup 30-second timeout for the API call
+  const timeoutId = setTimeout(() => {
+    if (currentAbortController) {
+      currentAbortController.abort();
+    }
+  }, 30000);
+
+  try {
+    const result = await callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, activeKey, systemPrompt, apiUrl, signal);
+    clearTimeout(timeoutId);
+    return result;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error("Request timed out (30 seconds limit reached) or was cancelled by user.");
+    }
+    throw error;
+  } finally {
+    // Clear controller if it is the current one
+    if (currentAbortController?.signal === signal) {
+      currentAbortController = null;
+    }
+  }
 }
 
 // Generates task context summary to copy/paste to new tab
@@ -77,7 +117,7 @@ Write the summary now:`;
 }
 
 // Call DeepSeek Chat Endpoint (OpenAI Compatible)
-async function callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, apiKey, systemPrompt, apiUrl) {
+async function callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, apiKey, systemPrompt, apiUrl, signal) {
   const url = apiUrl || "https://api.deepseek.com/chat/completions";
   
   const messages = [
@@ -117,7 +157,8 @@ async function callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, apiK
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal: signal
   });
 
   if (!response.ok) {
@@ -134,9 +175,11 @@ async function callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, apiK
 }
 
 // Generate Mock Response for Simulated Mode
-function generateMockResponse(prompt, pageContext) {
-  return new Promise((resolve) => {
-    setTimeout(() => {
+function generateMockResponse(prompt, pageContext, signal) {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      if (signal && signal.aborted) return;
+      
       const lowerPrompt = prompt.toLowerCase();
       const pageTitle = pageContext ? pageContext.title : "Unknown Page";
       
@@ -153,5 +196,12 @@ function generateMockResponse(prompt, pageContext) {
         resolve(`🤖 **IA Agent (DeepSeek Simulated Mode)**\n\nI received your question: *"${prompt}"*\n\nSince no active API Key is entered in settings, I am responding in **Simulated Mode**. To get live DeepSeek responses, please configure your API key in Settings.`);
       }
     }, 1000);
+
+    if (signal) {
+      signal.addEventListener('abort', () => {
+        clearTimeout(timeoutId);
+        reject(new Error("Request timed out (30 seconds limit reached) or was cancelled by user."));
+      });
+    }
   });
 }

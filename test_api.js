@@ -1,84 +1,123 @@
 /**
- * IA Agent - Local DeepSeek API Test Runner
- * Run this in your terminal to test DeepSeek API:
+ * IA Agent - Local DeepSeek / OpenAI Compatible API Test Runner
+ * Run this in your terminal to test DeepSeek or other endpoints:
  *   node test_api.js
  */
 
-const https = require('https');
-
-// Helper to make POST requests using node https module
-function postRequest(url, headers, body) {
-  return new Promise((resolve, reject) => {
-    const urlObj = new URL(url);
-    const options = {
-      hostname: urlObj.hostname,
-      port: 443,
-      path: urlObj.pathname + urlObj.search,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers
-      }
-    };
-
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', (chunk) => data += chunk);
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve(JSON.parse(data));
-        } else {
-          reject(new Error(`HTTP Error ${res.statusCode}: ${data}`));
-        }
-      });
-    });
-
-    req.on('error', (err) => reject(err));
-    req.write(JSON.stringify(body));
-    req.end();
-  });
+// Ensure global fetch is supported (Node 18+)
+if (typeof fetch === 'undefined') {
+  console.error("❌ Node.js 18+ is required to run this script because it relies on global fetch.");
+  process.exit(1);
 }
 
-// Call DeepSeek API
-async function testDeepSeek(apiKey, prompt) {
-  const model = "deepseek-chat";
-  const url = "https://api.deepseek.com/chat/completions";
+// ANSI Color codes for pretty terminal output
+const colors = {
+  reset: "\x1b[0m",
+  bright: "\x1b[1m",
+  red: "\x1b[31m",
+  green: "\x1b[32m",
+  yellow: "\x1b[33m",
+  blue: "\x1b[34m",
+  cyan: "\x1b[36m"
+};
+
+// Call API completions endpoint
+async function testAPI(apiKey, apiUrl, model, prompt) {
+  const url = apiUrl || "https://api.deepseek.com/chat/completions";
+  const modelName = model || "deepseek-chat";
+  
   const headers = {
+    'Content-Type': 'application/json',
     'Authorization': `Bearer ${apiKey}`
   };
+  
   const payload = {
-    model: model,
+    model: modelName,
     messages: [{ role: "user", content: prompt }],
     temperature: 0.4
   };
 
-  console.log(`\nCalling DeepSeek API (${model})...`);
-  const data = await postRequest(url, headers, payload);
-  return data.choices?.[0]?.message?.content || "No response";
+  console.log(`\n${colors.cyan}Calling API (${modelName}) at ${url}...${colors.reset}`);
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout for testing
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      let errorDetails = "";
+      try {
+        const errJson = await response.json();
+        errorDetails = JSON.stringify(errJson);
+      } catch (e) {
+        errorDetails = await response.text().catch(() => response.statusText);
+      }
+      throw new Error(`HTTP Error ${response.status}: ${errorDetails}`);
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || "No response content found.";
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error("Request timed out (15 seconds limit reached).");
+    }
+    throw error;
+  }
 }
 
 // Main Runner
 async function main() {
-  const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "YOUR_DEEPSEEK_KEY";
+  const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
+  const API_URL = process.env.API_URL || "https://api.deepseek.com/chat/completions";
+  const MODEL_NAME = process.env.MODEL_NAME || "deepseek-chat";
   const testPrompt = "Translate 'Intelligent Assistant Agent' into French, German, and Spanish, in a clean list.";
 
-  console.log("==================================================");
-  console.log("       IA Agent Local DeepSeek API Test Runner     ");
-  console.log("==================================================");
+  console.log(`${colors.bright}${colors.blue}==================================================${colors.reset}`);
+  console.log(`${colors.bright}${colors.cyan}       IA Agent Local API Completions Test Runner  ${colors.reset}`);
+  console.log(`${colors.bright}${colors.blue}==================================================${colors.reset}`);
 
-  if (DEEPSEEK_API_KEY && DEEPSEEK_API_KEY !== "YOUR_DEEPSEEK_KEY" && DEEPSEEK_API_KEY !== "") {
-    try {
-      const response = await testDeepSeek(DEEPSEEK_API_KEY, testPrompt);
-      console.log("\n--- DeepSeek Response ---");
-      console.log(response);
-    } catch (error) {
-      console.error("\n❌ DeepSeek Error:", error.message);
+  // Validate key format
+  if (!DEEPSEEK_API_KEY) {
+    console.error(`\n${colors.yellow}⚠️  API Key is empty. Please set the DEEPSEEK_API_KEY environment variable.${colors.reset}`);
+    console.log(`   Example (Windows PowerShell): $env:DEEPSEEK_API_KEY="sk-..."`);
+    console.log(`   Example (Linux/Mac): export DEEPSEEK_API_KEY="sk-..."`);
+    console.log(`\n   You can also specify API_URL and MODEL_NAME env variables to test other endpoints (e.g. Groq, Grok).`);
+    console.log(`\n${colors.bright}${colors.blue}==================================================${colors.reset}`);
+    return;
+  }
+
+  if (!DEEPSEEK_API_KEY.startsWith("sk-")) {
+    console.warn(`\n${colors.yellow}⚠️  Warning: API Key does not start with standard "sk-" prefix.${colors.reset}`);
+    console.warn(`   Double-check that the key is correct for your provider.`);
+  }
+
+  try {
+    const response = await testAPI(DEEPSEEK_API_KEY, API_URL, MODEL_NAME, testPrompt);
+    console.log(`\n${colors.green}✅ Success! Response:${colors.reset}`);
+    console.log(`${colors.bright}--------------------------------------------------${colors.reset}`);
+    console.log(response);
+    console.log(`${colors.bright}--------------------------------------------------${colors.reset}`);
+  } catch (error) {
+    console.error(`\n${colors.red}❌ Test Failed!${colors.reset}`);
+    console.error(`   ${colors.bright}Error details:${colors.reset} ${error.message}`);
+    
+    if (error.message.includes("401")) {
+      console.error(`   ${colors.yellow}Hint: Your API key appears to be invalid or unauthorized for this endpoint.${colors.reset}`);
+    } else if (error.message.includes("402") || error.message.includes("balance")) {
+      console.error(`   ${colors.yellow}Hint: Insufficient balance. Please fund your provider account.${colors.reset}`);
     }
-  } else {
-    console.log("\n⚠️ DeepSeek Key not set. Set DEEPSEEK_API_KEY or edit the script to test.");
   }
   
-  console.log("\n==================================================");
+  console.log(`\n${colors.bright}${colors.blue}==================================================${colors.reset}`);
 }
 
 main();

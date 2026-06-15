@@ -1,49 +1,162 @@
 // Content script for IA Agent extension
 // Extracts webpage text and details contextually and safely.
 
-function getCleanedTextContent() {
-  // Clone body to avoid messing up the live webpage DOM
-  const bodyClone = document.body.cloneNode(true);
+function smartTruncate(text, maxChars) {
+  if (text.length <= maxChars) return text;
   
-  // Elements to remove from clone to keep only meaningful text
-  const selectorsToRemove = [
-    'script', 'style', 'noscript', 'iframe', 'svg', 
-    'nav', 'footer', 'header', '.footer', '.header', '.nav', '.menu',
-    '#footer', '#header', '#nav', '#menu', 'aside', '.sidebar', '#sidebar'
-  ];
+  const searchRange = 300;
+  const truncateAt = maxChars;
+  let boundaryIdx = -1;
   
-  selectorsToRemove.forEach(selector => {
-    const elements = bodyClone.querySelectorAll(selector);
-    elements.forEach(el => el.remove());
-  });
-
-  // Get inner text and clean up whitespace
-  let text = bodyClone.innerText || bodyClone.textContent || "";
-  text = text.replace(/\s+/g, ' ').trim();
-  
-  // Truncate to a safe token limit (approx. 15,000 chars)
-  const maxChars = 15000;
-  if (text.length > maxChars) {
-    text = text.substring(0, maxChars) + "\n\n[Content truncated for length]";
+  // Look for code block boundary: ```
+  const codeBlockIdx = text.lastIndexOf("```", truncateAt);
+  if (codeBlockIdx !== -1 && codeBlockIdx > truncateAt - searchRange) {
+    boundaryIdx = codeBlockIdx + 3;
   }
   
-  return text;
+  // Look for paragraph boundary: \n\n or \n
+  if (boundaryIdx === -1) {
+    const paraIdx = text.lastIndexOf("\n\n", truncateAt);
+    if (paraIdx !== -1 && paraIdx > truncateAt - searchRange) {
+      boundaryIdx = paraIdx;
+    }
+  }
+  
+  if (boundaryIdx === -1) {
+    const newlineIdx = text.lastIndexOf("\n", truncateAt);
+    if (newlineIdx !== -1 && newlineIdx > truncateAt - searchRange) {
+      boundaryIdx = newlineIdx;
+    }
+  }
+  
+  // Look for sentence boundary: . or ? or ! followed by space
+  if (boundaryIdx === -1) {
+    const sentencePatterns = [". ", "? ", "! "];
+    let bestIdx = -1;
+    sentencePatterns.forEach(pattern => {
+      const idx = text.lastIndexOf(pattern, truncateAt);
+      if (idx !== -1 && idx > truncateAt - searchRange && idx > bestIdx) {
+        bestIdx = idx + 1; // include the punctuation
+      }
+    });
+    if (bestIdx !== -1) {
+      boundaryIdx = bestIdx;
+    }
+  }
+  
+  // Fallback to word boundary (space)
+  if (boundaryIdx === -1) {
+    const spaceIdx = text.lastIndexOf(" ", truncateAt);
+    if (spaceIdx !== -1 && spaceIdx > truncateAt - 100) {
+      boundaryIdx = spaceIdx;
+    }
+  }
+  
+  const finalTruncateIdx = boundaryIdx !== -1 ? boundaryIdx : truncateAt;
+  return text.substring(0, finalTruncateIdx).trim() + "\n\n[Content truncated for length]";
+}
+
+function getCleanedTextContent(maxChars) {
+  // Priority containers: article, main, then fallback to body
+  const prioritySelectors = ['article', 'main', '#content', '.content', 'body'];
+  let rootElement = document.body;
+  
+  for (const selector of prioritySelectors) {
+    const el = document.querySelector(selector);
+    if (el && el.innerText && el.innerText.trim().length > 200) {
+      rootElement = el;
+      break;
+    }
+  }
+
+  // Avoid elements that don't contain meaningful user content
+  const skipTags = new Set([
+    'SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'SVG', 'NAV', 'FOOTER', 'HEADER', 
+    'ASIDE', 'AUDIO', 'VIDEO', 'CANVAS', 'SELECT', 'OPTION', 'BUTTON'
+  ]);
+  
+  // Custom classes/ids to skip (commonly navigation, sidebars, menus, footers)
+  const skipPatterns = /(menu|nav|footer|header|sidebar|widget|ad-container|cookie|modal|popup|share)/i;
+
+  const textNodes = [];
+  let totalLength = 0;
+
+  const treeWalker = document.createTreeWalker(
+    rootElement,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode: function(node) {
+        const parent = node.parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        
+        if (skipTags.has(parent.tagName)) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        
+        let current = parent;
+        let depth = 0;
+        while (current && current !== rootElement && depth < 4) {
+          if (skipTags.has(current.tagName)) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          const className = current.className || "";
+          const idName = current.id || "";
+          
+          if ((typeof className === 'string' && skipPatterns.test(className)) || 
+              (typeof idName === 'string' && skipPatterns.test(idName))) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          current = current.parentElement;
+          depth++;
+        }
+        
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }
+  );
+
+  let node;
+  const maxLimit = maxChars || 15000;
+  let iterations = 0;
+  const maxIterations = 5000;
+
+  while ((node = treeWalker.nextNode()) && totalLength < maxLimit && iterations < maxIterations) {
+    iterations++;
+    const text = node.nodeValue.trim();
+    if (text) {
+      const cleanedText = text.replace(/\s+/g, ' ');
+      textNodes.push(cleanedText);
+      totalLength += cleanedText.length + 1;
+    }
+  }
+
+  let combinedText = textNodes.join(' ').trim();
+  
+  if (combinedText.length > maxLimit || iterations >= maxIterations) {
+    combinedText = smartTruncate(combinedText, maxLimit);
+  }
+
+  return combinedText;
 }
 
 // Listen for messages from the popup or background service worker
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "getPageContent") {
-    try {
-      const pageInfo = {
-        title: document.title,
-        url: window.location.href,
-        content: getCleanedTextContent(),
-        description: document.querySelector('meta[name="description"]')?.content || ""
-      };
-      sendResponse({ success: true, data: pageInfo });
-    } catch (error) {
-      sendResponse({ success: false, error: error.message });
-    }
+    chrome.storage.local.get(['maxCharacters'], (items) => {
+      const maxChars = items.maxCharacters || 15000;
+      try {
+        const pageInfo = {
+          title: document.title,
+          url: window.location.href,
+          content: getCleanedTextContent(maxChars),
+          description: document.querySelector('meta[name="description"]')?.content || ""
+        };
+        sendResponse({ success: true, data: pageInfo });
+      } catch (error) {
+        sendResponse({ success: false, error: error.message });
+      }
+    });
+    return true; // Keep message channel open for async response
   } else if (request.action === "scrapeChat") {
     try {
       const chatData = scrapeChatConversation();
@@ -105,11 +218,13 @@ function scrapeChatConversation() {
   } else if (url.includes("deepseek.com")) {
     source = "DeepSeek";
     // DeepSeek chat containers: 
-    // AI responses are in div.ds-markdown or class containing ds-markdown
-    // User responses are in div.fbb737a4, ._9663006, or standard divs that represent user queries
-    const elements = document.querySelectorAll('div.ds-markdown, .fbb737a4, ._9663006, [class*="userMessage"], [class*="user-message"]');
+    // Stable selectors first, then autogenerated hashes as fallback
+    const elements = document.querySelectorAll('div.ds-markdown, [class*="ds-markdown"], [data-testid="chat-message"], [class*="user-message"], [class*="userMessage"], .fbb737a4, ._9663006');
     elements.forEach(node => {
-      const isAI = node.classList.contains('ds-markdown') || node.querySelector('.ds-markdown');
+      const isAI = node.classList.contains('ds-markdown') || 
+                   node.querySelector('.ds-markdown') || 
+                   node.querySelector('[class*="ds-markdown"]') ||
+                   node.getAttribute('data-testid') === 'assistant-message';
       const role = isAI ? 'assistant' : 'user';
       const content = node.innerText || node.textContent;
       if (content) {
