@@ -11,11 +11,24 @@ if (typeof fetch === 'undefined') {
 }
 
 // Detect if colors are supported by the terminal environment
-const useColors = process.stdout.isTTY && 
-                  (process.platform !== 'win32' || 
-                   process.env.TERM || 
-                   process.env.COLORTERM || 
-                   process.env.WT_SESSION);
+function hasColorSupport() {
+  if (!process.stdout.isTTY) return false;
+  if (process.platform !== 'win32') return true;
+  
+  // Windows-specific environment checks for colors (CMD, PowerShell, WT, Cmder, ConEmu)
+  return !!(
+    process.env.TERM ||
+    process.env.COLORTERM ||
+    process.env.WT_SESSION ||             // Windows Terminal
+    process.env.CMDER_ROOT ||             // Cmder
+    process.env.ConEmuPID ||              // ConEmu
+    process.env.ConEmuANSI === 'ON' ||    // ConEmu ANSI mode
+    process.env.PSModulePath ||           // PowerShell
+    process.env.PROMPT                    // Command Prompt (CMD)
+  );
+}
+
+const useColors = hasColorSupport();
 
 // ANSI Color codes for pretty terminal output
 const colors = {

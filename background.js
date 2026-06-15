@@ -140,7 +140,21 @@ Analyze the transcript, synthesize the details thoroughly, and generate the migr
 
 // Call API completions Endpoint (OpenAI Compatible)
 async function callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, apiKey, systemPrompt, apiUrl, signal) {
-  const url = apiUrl || "https://api.deepseek.com/chat/completions";
+  let url = apiUrl || "https://api.deepseek.com/chat/completions";
+  
+  // Sanitize API URL: strip trailing slashes and collapse duplicate path slashes (//) while keeping protocol selector (://)
+  let proto = "";
+  let path = url;
+  const protoMatch = url.match(/^https?:\/\//i);
+  if (protoMatch) {
+    proto = protoMatch[0];
+    path = url.substring(proto.length);
+  }
+  path = path.replace(/\/+/g, '/');
+  if (path.endsWith('/')) {
+    path = path.slice(0, -1);
+  }
+  url = proto + path;
   
   const messages = [
     { role: "system", content: systemPrompt }
@@ -206,8 +220,17 @@ async function callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, apiK
 // Generate Mock Response for Simulated Mode
 function generateMockResponse(prompt, pageContext, signal) {
   return new Promise((resolve, reject) => {
+    let isSettled = false;
+
+    // Check if already aborted before starting
+    if (signal && signal.aborted) {
+      isSettled = true;
+      return reject(new Error("Request timed out (30 seconds limit reached) or was cancelled."));
+    }
+
     const timeoutId = setTimeout(() => {
-      if (signal && signal.aborted) return;
+      if (isSettled) return;
+      isSettled = true;
       
       const lowerPrompt = prompt.toLowerCase();
       const pageTitle = pageContext ? pageContext.title : "Unknown Page";
@@ -228,6 +251,8 @@ function generateMockResponse(prompt, pageContext, signal) {
 
     if (signal) {
       signal.addEventListener('abort', () => {
+        if (isSettled) return;
+        isSettled = true;
         clearTimeout(timeoutId);
         reject(new Error("Request timed out (30 seconds limit reached) or was cancelled."));
       });

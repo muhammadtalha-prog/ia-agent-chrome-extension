@@ -63,47 +63,49 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function recheckActiveTab(tab) {
+    activeTab = tab;
+    const url = activeTab.url || "";
+    const currentAI = getAIPageName(url);
+
+    // Check for restricted chrome/system URLs
+    if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('edge://') || url.startsWith('about:')) {
+      setSystemPageMode();
+      return;
+    }
+
+    // Display active tab title
+    pageTitleElement.textContent = activeTab.title;
+    pageTitleElement.title = activeTab.title;
+
+    // Handle buttons visibility based on page type
+    if (currentAI) {
+      btnCaptureChat.style.display = 'block';
+      btnSummarizePage.style.display = 'none';
+    } else {
+      btnCaptureChat.style.display = 'none';
+      btnSummarizePage.style.display = 'block';
+    }
+
+    // Request content from content.js
+    chrome.tabs.sendMessage(activeTab.id, { action: "getPageContent" }, (response) => {
+      if (chrome.runtime.lastError || !response || !response.success) {
+        injectContentScript(activeTab.id);
+      } else {
+        activeTabContext = response.data;
+        statusDot.className = "status-dot";
+        statusText.textContent = "Context Active";
+      }
+    });
+
+    // Show/hide migration banner
+    checkMigrationBanner(url);
+  }
+
   // 1. Initialize Active Tab and Context
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (tabs && tabs[0]) {
-      activeTab = tabs[0];
-      const url = activeTab.url || "";
-      const currentAI = getAIPageName(url);
-
-      // Check for restricted chrome/system URLs
-      if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('edge://') || url.startsWith('about:')) {
-        setSystemPageMode();
-        return;
-      }
-
-      // Display active tab title
-      pageTitleElement.textContent = activeTab.title;
-      pageTitleElement.title = activeTab.title;
-
-      // Handle buttons visibility based on page type
-      if (currentAI) {
-        btnCaptureChat.style.display = 'block';
-        btnSummarizePage.style.display = 'none';
-      } else {
-        btnCaptureChat.style.display = 'none';
-        btnSummarizePage.style.display = 'block';
-      }
-
-      // Request content from content.js
-      chrome.tabs.sendMessage(activeTab.id, { action: "getPageContent" }, (response) => {
-        // Handle runtime error or missing script (e.g. page not loaded yet)
-        if (chrome.runtime.lastError || !response || !response.success) {
-          // Fallback: Inject content script dynamically if not loaded automatically
-          injectContentScript(activeTab.id);
-        } else {
-          activeTabContext = response.data;
-          statusDot.className = "status-dot";
-          statusText.textContent = "Context Active";
-        }
-      });
-
-      // Show/hide migration banner
-      checkMigrationBanner(url);
+      recheckActiveTab(tabs[0]);
     } else {
       pageTitleElement.textContent = "No active tab detected";
       btnSummarizePage.style.display = 'none';
@@ -111,24 +113,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 2. Load Chat History for Active Tab or General (using local storage to persist logs)
+  // Listen for active tab URL updates / completion while popup is open
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (activeTab && tabId === activeTab.id && changeInfo.status === 'complete') {
+      recheckActiveTab(tab);
+    }
+  });
+
+  // 2. Load Chat History for Active Tab or General (No silent auto-pruning on load)
   chrome.storage.local.get(['globalChatHistory'], (result) => {
     if (result.globalChatHistory && result.globalChatHistory.length > 0) {
-      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-      chatHistory = result.globalChatHistory.filter(msg => {
-        return !msg.timestamp || msg.timestamp > sevenDaysAgo;
-      });
-      if (chatHistory.length > 100) {
-        chatHistory = chatHistory.slice(-100);
-      }
-      
-      // Update local storage immediately to synchronize filters
-      chrome.storage.local.set({ globalChatHistory: chatHistory });
-      
-      if (chatHistory.length > 0) {
-        welcomeScreen.style.display = 'none';
-        renderHistory();
-      }
+      chatHistory = result.globalChatHistory;
+      welcomeScreen.style.display = 'none';
+      renderHistory();
     }
   });
 
@@ -254,6 +251,11 @@ document.addEventListener('DOMContentLoaded', () => {
           chrome.runtime.sendMessage({ action: "cancelQuery", requestId: requestId });
           activeRequests.delete(requestId);
           cancelledRequests.add(requestId);
+          
+          // Auto-clean cancelled Request ID after 10s to prevent memory leak
+          setTimeout(() => {
+            cancelledRequests.delete(requestId);
+          }, 10000);
           
           if (statusTimeoutId) {
             clearTimeout(statusTimeoutId);
@@ -452,7 +454,7 @@ document.addEventListener('DOMContentLoaded', () => {
     appendMessage('user', text);
     chatHistory.push({ role: 'user', content: text, timestamp: Date.now() });
     
-    // Save history immediately (reverted to local storage and removed debouncer for consistency)
+    // Save history immediately
     saveHistory();
 
     // Reset input box
@@ -480,6 +482,11 @@ document.addEventListener('DOMContentLoaded', () => {
       activeRequests.delete(requestId);
       cancelledRequests.add(requestId);
       
+      // Auto-clean cancelled Request ID after 10s to prevent memory leak
+      setTimeout(() => {
+        cancelledRequests.delete(requestId);
+      }, 10000);
+
       if (statusTimeoutId) {
         clearTimeout(statusTimeoutId);
         statusTimeoutId = null;
@@ -527,9 +534,26 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Save history to storage immediately to prevent loss on close
+  // Save history to local storage with robust Quota Checks
   function saveHistory() {
-    chrome.storage.local.set({ globalChatHistory: chatHistory });
+    chrome.storage.local.set({ globalChatHistory: chatHistory }, () => {
+      if (chrome.runtime.lastError) {
+        console.error("Storage save failed: ", chrome.runtime.lastError.message);
+        
+        // Handle Storage Quota Exceeded Exception
+        if (chrome.runtime.lastError.message.includes("QUOTA_BYTES") || 
+            chrome.runtime.lastError.message.includes("quota")) {
+          
+          appendMessage('agent', `⚠️ **Storage Limit Reached:** The extension storage is full. Saving has failed. I will automatically prune some of your oldest messages to free up space.`, true);
+          
+          // Auto-prune oldest 20 messages to make room
+          if (chatHistory.length > 20) {
+            chatHistory = chatHistory.slice(20);
+            chrome.storage.local.set({ globalChatHistory: chatHistory });
+          }
+        }
+      }
+    });
   }
 
   // Message UI Helpers

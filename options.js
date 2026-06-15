@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const providerPreset = document.getElementById('provider-preset');
   const settingsForm = document.getElementById('settings-form');
   const btnClearHistory = document.getElementById('btn-clear-history');
+  const btnPruneHistory = document.getElementById('btn-prune-history');
   const toast = document.getElementById('toast');
   
   const keyFormatHint = document.getElementById('key-format-hint');
@@ -100,6 +101,17 @@ document.addEventListener('DOMContentLoaded', () => {
     validateApiKey();
   });
 
+  // If user modifies inputs manually, sync preset selector to "custom"
+  apiUrlInput.addEventListener('input', () => {
+    providerPreset.value = detectPreset(apiUrlInput.value.trim(), modelInput.value.trim());
+    validateApiKey();
+  });
+
+  modelInput.addEventListener('input', () => {
+    providerPreset.value = detectPreset(apiUrlInput.value.trim(), modelInput.value.trim());
+    validateApiKey();
+  });
+
   // Run validation on key input changes
   apiKeyInput.addEventListener('input', validateApiKey);
 
@@ -138,6 +150,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if (confirmClear) {
       chrome.storage.local.remove(['globalChatHistory'], () => {
         showToast("Chat history cleared!");
+      });
+    }
+  });
+
+  // Handle Prune Chat History (older than 7 days)
+  btnPruneHistory.addEventListener('click', () => {
+    const confirmPrune = confirm("Are you sure you want to delete messages older than 7 days? This cannot be undone.");
+    if (confirmPrune) {
+      chrome.storage.local.get(['globalChatHistory'], (result) => {
+        if (result.globalChatHistory && result.globalChatHistory.length > 0) {
+          const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+          const pruned = result.globalChatHistory.filter(msg => {
+            // Keep messages that are recent, or have no timestamp as fallback
+            return !msg.timestamp || msg.timestamp > sevenDaysAgo;
+          });
+          
+          chrome.storage.local.set({ globalChatHistory: pruned }, () => {
+            showToast("Old messages pruned successfully!");
+          });
+        } else {
+          showToast("No chat history found to prune.");
+        }
       });
     }
   });
