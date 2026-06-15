@@ -12,6 +12,8 @@ document.addEventListener('DOMContentLoaded', () => {
   
   const keyFormatHint = document.getElementById('key-format-hint');
   const charLimitWarning = document.getElementById('char-limit-warning');
+  const customSelectorsInput = document.getElementById('custom-selectors');
+  const selectorFormatWarning = document.getElementById('selector-format-warning');
 
   const defaultPrompt = "You are IA Agent, a helpful, intelligent browser assistant. You analyze the text content of the user's active webpage and answer questions or write summaries based on it. Keep responses clear, concise, and structured.";
 
@@ -37,13 +39,15 @@ document.addEventListener('DOMContentLoaded', () => {
     'modelName',
     'maxCharacters',
     'systemPrompt',
-    'selectedPreset'
+    'selectedPreset',
+    'customSelectors'
   ], (items) => {
     apiKeyInput.value = items.apiKey || '';
     apiUrlInput.value = items.apiUrl || 'https://api.deepseek.com/chat/completions';
     modelInput.value = items.modelName || 'deepseek-chat';
     maxCharactersInput.value = items.maxCharacters || 15000;
     systemPromptInput.value = items.systemPrompt || defaultPrompt;
+    customSelectorsInput.value = items.customSelectors || '';
     
     // Auto-detect preset or select custom
     const savedPreset = items.selectedPreset || detectPreset(apiUrlInput.value, modelInput.value);
@@ -130,13 +134,29 @@ document.addEventListener('DOMContentLoaded', () => {
       charLimitWarning.style.display = 'none';
     }
 
+    const customSelectorsVal = customSelectorsInput.value.trim();
+    if (customSelectorsVal) {
+      try {
+        const parsedSelectors = JSON.parse(customSelectorsVal);
+        if (typeof parsedSelectors !== 'object' || parsedSelectors === null) {
+          throw new Error("Must be a JSON object");
+        }
+      } catch (err) {
+        selectorFormatWarning.style.display = 'block';
+        customSelectorsInput.focus();
+        return;
+      }
+    }
+    selectorFormatWarning.style.display = 'none';
+
     const settings = {
       apiKey: apiKeyInput.value.trim(),
       apiUrl: apiUrlInput.value.trim(),
       modelName: modelInput.value.trim(),
       maxCharacters: maxChars,
       systemPrompt: systemPromptInput.value.trim(),
-      selectedPreset: providerPreset.value
+      selectedPreset: providerPreset.value,
+      customSelectors: customSelectorsVal
     };
 
     chrome.storage.local.set(settings, () => {

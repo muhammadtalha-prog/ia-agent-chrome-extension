@@ -310,6 +310,13 @@
         <div class="info-note">Defines how the agent behaves and formats response summaries.</div>
       </div>
 
+      <div class="form-group">
+        <label for="custom-selectors">Custom Chat Selectors (JSON Map)</label>
+        <textarea id="custom-selectors" rows="3" placeholder='{ "user": "div.user-bubble", "assistant": "div.assistant-bubble" }'></textarea>
+        <div id="selector-format-warning" class="info-note" style="color: #ef4444; display: none; font-weight: 500;">⚠️ Invalid JSON format. Must be a valid JSON object containing "user" and/or "assistant" selectors.</div>
+        <div class="info-note">Optional: Overwrite default scrapers. Enter a JSON object with "user" and/or "assistant" selectors (e.g., <code>{"user": "div.user-msg", "assistant": "div.assistant-msg"}</code>).</div>
+      </div>
+
       <button type="submit" class="btn-save">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>

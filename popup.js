@@ -22,7 +22,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Request ID System to track concurrent/rapid message states
   const activeRequests = new Set();
-  const cancelledRequests = new Set();
+  const cancelledRequests = new Map();
+
+  // Garbage collect cancelled requests older than 10 seconds every 5 seconds
+  setInterval(() => {
+    const now = Date.now();
+    for (const [reqId, timestamp] of cancelledRequests.entries()) {
+      if (now - timestamp > 10000) {
+        cancelledRequests.delete(reqId);
+      }
+    }
+  }, 5000);
 
   function getAIPageName(url) {
     if (!url) return null;
@@ -250,12 +260,7 @@ document.addEventListener('DOMContentLoaded', () => {
         cancelBtn.addEventListener('click', () => {
           chrome.runtime.sendMessage({ action: "cancelQuery", requestId: requestId });
           activeRequests.delete(requestId);
-          cancelledRequests.add(requestId);
-          
-          // Auto-clean cancelled Request ID after 10s to prevent memory leak
-          setTimeout(() => {
-            cancelledRequests.delete(requestId);
-          }, 10000);
+          cancelledRequests.set(requestId, Date.now());
           
           if (statusTimeoutId) {
             clearTimeout(statusTimeoutId);
@@ -480,12 +485,7 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelBtn.addEventListener('click', () => {
       chrome.runtime.sendMessage({ action: "cancelQuery", requestId: requestId });
       activeRequests.delete(requestId);
-      cancelledRequests.add(requestId);
-      
-      // Auto-clean cancelled Request ID after 10s to prevent memory leak
-      setTimeout(() => {
-        cancelledRequests.delete(requestId);
-      }, 10000);
+      cancelledRequests.set(requestId, Date.now());
 
       if (statusTimeoutId) {
         clearTimeout(statusTimeoutId);
@@ -549,7 +549,18 @@ document.addEventListener('DOMContentLoaded', () => {
           // Auto-prune oldest 20 messages to make room
           if (chatHistory.length > 20) {
             chatHistory = chatHistory.slice(20);
-            chrome.storage.local.set({ globalChatHistory: chatHistory });
+            chrome.storage.local.set({ globalChatHistory: chatHistory }, () => {
+              if (!chrome.runtime.lastError) {
+                appendMessage('agent', `🧹 **Storage Recovery:** Successfully auto-pruned the oldest 20 messages to free up local storage space. Your history has been saved.`, false);
+              }
+            });
+          } else if (chatHistory.length > 0) {
+            chatHistory = [];
+            chrome.storage.local.set({ globalChatHistory: chatHistory }, () => {
+              if (!chrome.runtime.lastError) {
+                appendMessage('agent', `🧹 **Storage Recovery:** Successfully cleared all chat history to free up local storage space.`, false);
+              }
+            });
           }
         }
       }

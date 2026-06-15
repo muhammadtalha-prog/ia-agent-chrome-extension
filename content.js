@@ -164,12 +164,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true; // Keep message channel open for async response
   } else if (request.action === "scrapeChat") {
-    try {
-      const chatData = scrapeChatConversation();
-      sendResponse({ success: true, data: chatData });
-    } catch (error) {
-      sendResponse({ success: false, error: error.message });
-    }
+    chrome.storage.local.get(['customSelectors'], (items) => {
+      try {
+        const customSelectorsRaw = items.customSelectors || "";
+        const chatData = scrapeChatConversation(customSelectorsRaw);
+        sendResponse({ success: true, data: chatData });
+      } catch (error) {
+        sendResponse({ success: false, error: error.message });
+      }
+    });
+    return true; // Keep message channel open for async response
   } else if (request.action === "injectPrompt") {
     try {
       const success = injectTextIntoPromptBox(request.text);
@@ -182,10 +186,50 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // Parses and scrapes active conversations on common AI chat pages
-function scrapeChatConversation() {
+function scrapeChatConversation(customSelectorsRaw) {
   const url = window.location.href.toLowerCase();
   let source = "AI Chat";
   const messages = [];
+
+  // Parse custom selectors if present
+  let customSelectors = null;
+  if (customSelectorsRaw) {
+    try {
+      customSelectors = JSON.parse(customSelectorsRaw);
+    } catch (e) {
+      console.error("Failed to parse custom selectors:", e);
+    }
+  }
+
+  // If custom selectors are defined and match, use them first
+  if (customSelectors && (customSelectors.user || customSelectors.assistant)) {
+    const userSelector = customSelectors.user;
+    const assistantSelector = customSelectors.assistant;
+    const combinedSelector = [userSelector, assistantSelector].filter(Boolean).join(', ');
+    
+    if (combinedSelector) {
+      const elements = document.querySelectorAll(combinedSelector);
+      elements.forEach(node => {
+        const isUser = userSelector && (node.matches(userSelector) || node.closest(userSelector));
+        const role = isUser ? 'user' : 'assistant';
+        const content = node.innerText || node.textContent;
+        if (content) {
+          const trimmed = content.trim();
+          if (trimmed.length > 0) {
+            messages.push({ role, content: trimmed });
+          }
+        }
+      });
+      
+      try {
+        source = window.location.hostname.replace('www.', '');
+      } catch (e) {}
+
+      if (messages.length > 0) {
+        return { source, messages };
+      }
+    }
+  }
 
   if (url.includes("chatgpt.com")) {
     source = "ChatGPT";
