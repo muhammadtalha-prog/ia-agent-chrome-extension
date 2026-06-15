@@ -93,21 +93,37 @@ async function handleSummarizeTranscript(request) {
   const { transcript, source } = request;
   
   const prompt = `Below is a chat transcript between a user and an AI assistant on the platform "${source || 'another AI'}".
-Your job is to write a highly detailed summary that the user can paste into a NEW conversation with a different AI to resume the task immediately.
+Your job is to generate a highly professional, comprehensive, and structured migration summary designed to be pasted into a NEW session with another AI assistant. This summary must act as a perfect bridge, transferring all necessary context, active directives, finalized assets, and upcoming plans so work can resume immediately without loss of momentum.
 
-The summary MUST:
-1. State the overall project/task goal clearly.
-2. Outline the progress made so far (e.g. what design decisions were reached, what text was written, or what code structures were designed).
-3. Provide the exact code or text snippets that were finalized, or a reference to them if they are too long.
-4. Detail the immediate next step to be taken.
+The summary MUST follow this format:
 
-Begin the summary with exactly this sentence: "Here is the context and progress from my previous session with ${source || 'another AI'} so we can continue the task without interruption:"
+1. **Start with this exact opening sentence**:
+"Here is the context and progress from my previous session with ${source || 'another AI'} so we can continue the task without interruption:"
+
+2. **Project / Task Overview**:
+   - Clear definition of the core objective and final goal of this project.
+   - Core specifications, constraints, technology stack, and architecture decisions.
+
+3. **Current Progress & Accomplishments**:
+   - Step-by-step summary of what has been implemented so far.
+   - List of design decisions, patterns, or copy that were agreed upon.
+
+4. **Finalized Code & Text Snippets (Critical)**:
+   - Provide the exact code templates, configuration files, text scripts, or HTML structures that have been finalized.
+   - Do NOT abbreviate or truncate code blocks. Provide them completely so they can be reused directly.
+
+5. **Active Constraints & Instructions**:
+   - Specify any rules, guidelines, code styling patterns, or limitations established during the chat session.
+
+6. **Next Immediate Actions**:
+   - A sequential TODO list for the next phase of work.
+   - The exact next step the assistant should take right now.
 
 [CHAT TRANSCRIPT]
 ${transcript}
 [END CHAT TRANSCRIPT]
 
-Write the summary now:`;
+Analyze the transcript, synthesize the details thoroughly, and generate the migration summary now:`;
 
   return handleAgentQuery({
     prompt: prompt,
