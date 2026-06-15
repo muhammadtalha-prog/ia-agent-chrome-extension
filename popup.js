@@ -20,6 +20,10 @@ document.addEventListener('DOMContentLoaded', () => {
   let chatHistory = [];
   let activeTab = null;
 
+  // Request ID System to track concurrent/rapid message states
+  const activeRequests = new Set();
+  const cancelledRequests = new Set();
+
   function getAIPageName(url) {
     if (!url) return null;
     const lowerUrl = url.toLowerCase();
@@ -35,8 +39,16 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.session.get(['migratingSession'], (result) => {
       if (result.migratingSession) {
         const session = result.migratingSession;
-        const currentAI = getAIPageName(currentUrl);
+        
+        // Auto-expire migration session context after 1 hour (3,600,000 ms)
+        const oneHour = 60 * 60 * 1000;
+        if (Date.now() - session.timestamp > oneHour) {
+          chrome.storage.session.remove(['migratingSession']);
+          migrationBanner.style.display = 'none';
+          return;
+        }
 
+        const currentAI = getAIPageName(currentUrl);
         migrationBanner.style.display = 'flex';
         migrationText.innerHTML = `Context from <strong>${session.source}</strong> is ready.`;
 
@@ -99,8 +111,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 2. Load Chat History for Active Tab or General
-  chrome.storage.session.get(['globalChatHistory'], (result) => {
+  // 2. Load Chat History for Active Tab or General (using local storage to persist logs)
+  chrome.storage.local.get(['globalChatHistory'], (result) => {
     if (result.globalChatHistory && result.globalChatHistory.length > 0) {
       const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
       chatHistory = result.globalChatHistory.filter(msg => {
@@ -110,8 +122,8 @@ document.addEventListener('DOMContentLoaded', () => {
         chatHistory = chatHistory.slice(-100);
       }
       
-      // Update memory cache immediately
-      chrome.storage.session.set({ globalChatHistory: chatHistory });
+      // Update local storage immediately to synchronize filters
+      chrome.storage.local.set({ globalChatHistory: chatHistory });
       
       if (chatHistory.length > 0) {
         welcomeScreen.style.display = 'none';
@@ -220,21 +232,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         welcomeScreen.style.display = 'none';
-        const loadingBubble = appendLoadingIndicator();
+        
+        // Setup unique Request ID for this async action
+        const requestId = "cap_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
+        const loadingBubble = appendLoadingIndicator(requestId);
         const statusTextEl = loadingBubble.querySelector('.loading-status-text');
         const cancelBtn = loadingBubble.querySelector('.btn-cancel-operation');
         
         statusTextEl.textContent = "Structuring chat elements...";
         chatContainer.scrollTop = chatContainer.scrollHeight;
         
-        setTimeout(() => {
+        activeRequests.add(requestId);
+
+        let statusTimeoutId = setTimeout(() => {
           if (statusTextEl && statusTextEl.isConnected) {
             statusTextEl.textContent = "Generating summary with API (Est. 5s)...";
           }
         }, 800);
 
         cancelBtn.addEventListener('click', () => {
-          chrome.runtime.sendMessage({ action: "cancelQuery" });
+          chrome.runtime.sendMessage({ action: "cancelQuery", requestId: requestId });
+          activeRequests.delete(requestId);
+          cancelledRequests.add(requestId);
+          
+          if (statusTimeoutId) {
+            clearTimeout(statusTimeoutId);
+            statusTimeoutId = null;
+          }
+
           loadingBubble.remove();
           btnCaptureChat.disabled = false;
           btnCaptureChat.textContent = "Summarize Chat";
@@ -245,11 +270,23 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.runtime.sendMessage({
           action: "summarizeTranscriptForTransfer",
           transcript: transcriptText,
-          source: chatData.source
+          source: chatData.source,
+          requestId: requestId
         }, (summaryResponse) => {
+          if (statusTimeoutId) {
+            clearTimeout(statusTimeoutId);
+            statusTimeoutId = null;
+          }
+
+          if (cancelledRequests.has(requestId)) {
+            cancelledRequests.delete(requestId);
+            return;
+          }
+          activeRequests.delete(requestId);
+
           if (!loadingBubble.isConnected) return;
-          
           loadingBubble.remove();
+          
           btnCaptureChat.disabled = false;
           btnCaptureChat.textContent = "Summarize Chat";
 
@@ -296,8 +333,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function fallbackCopyToClipboard(text) {
     return new Promise((resolve, reject) => {
+      let textArea = null;
       try {
-        const textArea = document.createElement("textarea");
+        textArea = document.createElement("textarea");
         textArea.value = text;
         textArea.style.position = "fixed";
         textArea.style.top = "0";
@@ -307,14 +345,17 @@ document.addEventListener('DOMContentLoaded', () => {
         textArea.focus();
         textArea.select();
         const successful = document.execCommand('copy');
-        document.body.removeChild(textArea);
         if (successful) {
           resolve();
         } else {
-          reject(new Error("fallback copy command returned false"));
+          reject(new Error("Browser blocked copy operation or command returned false."));
         }
       } catch (err) {
-        reject(err);
+        reject(new Error("Fallback copy failed: " + err.message));
+      } finally {
+        if (textArea && textArea.parentNode) {
+          textArea.parentNode.removeChild(textArea);
+        }
       }
     });
   }
@@ -404,33 +445,46 @@ document.addEventListener('DOMContentLoaded', () => {
     // Hide welcome screen if present
     welcomeScreen.style.display = 'none';
 
+    // Generate unique Request ID for this specific message query
+    const requestId = "msg_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
+
     // Add user message to UI and history
     appendMessage('user', text);
     chatHistory.push({ role: 'user', content: text, timestamp: Date.now() });
     
-    // Save history
+    // Save history immediately (reverted to local storage and removed debouncer for consistency)
     saveHistory();
 
     // Reset input box
     userInput.value = "";
     userInput.style.height = '24px';
 
-    // Append loading bubble
-    const loadingBubble = appendLoadingIndicator();
+    // Append loading bubble associated with Request ID
+    const loadingBubble = appendLoadingIndicator(requestId);
     const statusTextEl = loadingBubble.querySelector('.loading-status-text');
     const cancelBtn = loadingBubble.querySelector('.btn-cancel-operation');
 
     statusTextEl.textContent = "Analyzing context...";
     chatContainer.scrollTop = chatContainer.scrollHeight;
 
-    setTimeout(() => {
+    activeRequests.add(requestId);
+
+    let statusTimeoutId = setTimeout(() => {
       if (statusTextEl && statusTextEl.isConnected) {
         statusTextEl.textContent = "Calling API (Est. 5-10s)...";
       }
     }, 800);
 
     cancelBtn.addEventListener('click', () => {
-      chrome.runtime.sendMessage({ action: "cancelQuery" });
+      chrome.runtime.sendMessage({ action: "cancelQuery", requestId: requestId });
+      activeRequests.delete(requestId);
+      cancelledRequests.add(requestId);
+      
+      if (statusTimeoutId) {
+        clearTimeout(statusTimeoutId);
+        statusTimeoutId = null;
+      }
+
       loadingBubble.remove();
       appendMessage('agent', `❌ **Request cancelled by user.**`, true);
       chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -441,15 +495,26 @@ document.addEventListener('DOMContentLoaded', () => {
       action: "queryAgent",
       prompt: text,
       pageContext: activeTabContext,
-      chatHistory: chatHistory.slice(0, -1) // Send history excluding current message
+      chatHistory: chatHistory.slice(0, -1), // Send history excluding current message
+      requestId: requestId
     }, (response) => {
-      if (!loadingBubble.isConnected) return;
+      // Clear status timer
+      if (statusTimeoutId) {
+        clearTimeout(statusTimeoutId);
+        statusTimeoutId = null;
+      }
 
-      // Remove loading indicator
+      // Ignore if this request was cancelled in the meantime
+      if (cancelledRequests.has(requestId)) {
+        cancelledRequests.delete(requestId);
+        return;
+      }
+      activeRequests.delete(requestId);
+
+      if (!loadingBubble.isConnected) return;
       loadingBubble.remove();
 
       if (response && response.success) {
-        statusTextEl.textContent = "Processing response...";
         const agentText = response.data;
         appendMessage('agent', agentText);
         chatHistory.push({ role: 'assistant', content: agentText, timestamp: Date.now() });
@@ -462,25 +527,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Save history to storage with debouncer (1.5s)
-  let saveTimeout = null;
+  // Save history to storage immediately to prevent loss on close
   function saveHistory() {
-    if (saveTimeout) {
-      clearTimeout(saveTimeout);
-    }
-    saveTimeout = setTimeout(() => {
-      chrome.storage.session.set({ globalChatHistory: chatHistory });
-      saveTimeout = null;
-    }, 1500);
+    chrome.storage.local.set({ globalChatHistory: chatHistory });
   }
-
-  // Synchronous write on popup closing unload
-  window.addEventListener('unload', () => {
-    if (saveTimeout) {
-      clearTimeout(saveTimeout);
-      chrome.storage.session.set({ globalChatHistory: chatHistory });
-    }
-  });
 
   // Message UI Helpers
   function appendMessage(role, text, isError = false) {
@@ -502,9 +552,10 @@ document.addEventListener('DOMContentLoaded', () => {
     chatContainer.scrollTop = chatContainer.scrollHeight;
   }
 
-  function appendLoadingIndicator() {
+  function appendLoadingIndicator(requestId) {
     const loadingDiv = document.createElement('div');
     loadingDiv.className = 'message agent';
+    loadingDiv.dataset.requestId = requestId;
     loadingDiv.innerHTML = `
       <div class="typing-indicator-container">
         <div class="typing-indicator">
@@ -530,9 +581,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const messageElements = chatContainer.querySelectorAll('.message');
     messageElements.forEach(el => el.remove());
 
-    chatHistory.forEach(msg => {
-      appendMessage(msg.role === 'assistant' ? 'agent' : 'user', msg.content);
-    });
+    if (chatHistory && chatHistory.length > 0) {
+      welcomeScreen.style.display = 'none';
+      chatHistory.forEach(msg => {
+        appendMessage(msg.role === 'assistant' ? 'agent' : 'user', msg.content);
+      });
+    } else {
+      welcomeScreen.style.display = 'flex';
+    }
   }
 
   // Simple clean HTML Markdown parser in O(N) state machine (no regex O(n^2) complexity)

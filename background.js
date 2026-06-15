@@ -1,43 +1,48 @@
 // Background service worker for IA Agent
-let currentAbortController = null;
+const activeControllers = new Map();
 
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "queryAgent") {
     handleAgentQuery(request)
-      .then(response => sendResponse({ success: true, data: response }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
+      .then(response => sendResponse({ success: true, data: response, requestId: request.requestId }))
+      .catch(error => sendResponse({ success: false, error: error.message, requestId: request.requestId }));
     return true; // Keep channel open
   }
 
   if (request.action === "summarizeTranscriptForTransfer") {
     handleSummarizeTranscript(request)
-      .then(response => sendResponse({ success: true, data: response }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
+      .then(response => sendResponse({ success: true, data: response, requestId: request.requestId }))
+      .catch(error => sendResponse({ success: false, error: error.message, requestId: request.requestId }));
     return true; // Keep channel open
   }
 
   if (request.action === "cancelQuery") {
-    if (currentAbortController) {
-      currentAbortController.abort();
-      currentAbortController = null;
+    const reqId = request.requestId;
+    if (reqId && activeControllers.has(reqId)) {
+      activeControllers.get(reqId).abort();
+      activeControllers.delete(reqId);
     }
-    sendResponse({ success: true });
+    sendResponse({ success: true, requestId: reqId });
     return true;
   }
 });
 
 // Orchestrates requests using API/Mock providers
 async function handleAgentQuery(request) {
-  const { prompt, pageContext, chatHistory } = request;
+  const { prompt, pageContext, chatHistory, requestId } = request;
 
-  // Cancel any existing request before starting a new one
-  if (currentAbortController) {
-    currentAbortController.abort();
+  // Cancel any existing request with the same ID before starting a new one
+  if (requestId && activeControllers.has(requestId)) {
+    activeControllers.get(requestId).abort();
+    activeControllers.delete(requestId);
   }
 
-  currentAbortController = new AbortController();
-  const signal = currentAbortController.signal;
+  const controller = new AbortController();
+  const signal = controller.signal;
+  if (requestId) {
+    activeControllers.set(requestId, controller);
+  }
 
   // Retrieve settings
   const settings = await new Promise((resolve) => {
@@ -65,8 +70,8 @@ async function handleAgentQuery(request) {
 
   // Setup 30-second timeout for the API call
   const timeoutId = setTimeout(() => {
-    if (currentAbortController) {
-      currentAbortController.abort();
+    if (requestId && activeControllers.has(requestId)) {
+      activeControllers.get(requestId).abort();
     }
   }, 30000);
 
@@ -77,20 +82,20 @@ async function handleAgentQuery(request) {
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      throw new Error("Request timed out (30 seconds limit reached) or was cancelled by user.");
+      throw new Error("Request timed out (30 seconds limit reached) or was cancelled.");
     }
     throw error;
   } finally {
-    // Clear controller if it is the current one
-    if (currentAbortController?.signal === signal) {
-      currentAbortController = null;
+    // Clear controller from map
+    if (requestId) {
+      activeControllers.delete(requestId);
     }
   }
 }
 
 // Generates task context summary to copy/paste to new tab
 async function handleSummarizeTranscript(request) {
-  const { transcript, source } = request;
+  const { transcript, source, requestId } = request;
   
   const prompt = `Below is a chat transcript between a user and an AI assistant on the platform "${source || 'another AI'}".
 Your job is to generate a highly professional, comprehensive, and structured migration summary designed to be pasted into a NEW session with another AI assistant. This summary must act as a perfect bridge, transferring all necessary context, active directives, finalized assets, and upcoming plans so work can resume immediately without loss of momentum.
@@ -128,11 +133,12 @@ Analyze the transcript, synthesize the details thoroughly, and generate the migr
   return handleAgentQuery({
     prompt: prompt,
     pageContext: null,
-    chatHistory: []
+    chatHistory: [],
+    requestId: requestId
   });
 }
 
-// Call DeepSeek Chat Endpoint (OpenAI Compatible)
+// Call API completions Endpoint (OpenAI Compatible)
 async function callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, apiKey, systemPrompt, apiUrl, signal) {
   const url = apiUrl || "https://api.deepseek.com/chat/completions";
   
@@ -178,12 +184,19 @@ async function callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, apiK
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    let message = errorData.error?.message || errorData.message || response.statusText;
+    let message = "";
+    try {
+      const errorData = await response.json();
+      message = errorData.error?.message || errorData.message || response.statusText;
+    } catch (e) {
+      const rawText = await response.text().catch(() => "");
+      message = rawText.substring(0, 200).trim() || response.statusText;
+    }
+    
     if (message.toLowerCase().includes("insufficient balance") || response.status === 402) {
       message = "Insufficient Balance. Your API key has run out of funds. Please add funds to your account, or configure the extension to use a free local provider like Ollama in Settings.";
     }
-    throw new Error(`API Error: ${message}`);
+    throw new Error(`API Error (${response.status}): ${message}`);
   }
 
   const data = await response.json();
@@ -216,7 +229,7 @@ function generateMockResponse(prompt, pageContext, signal) {
     if (signal) {
       signal.addEventListener('abort', () => {
         clearTimeout(timeoutId);
-        reject(new Error("Request timed out (30 seconds limit reached) or was cancelled by user."));
+        reject(new Error("Request timed out (30 seconds limit reached) or was cancelled."));
       });
     }
   });

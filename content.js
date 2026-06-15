@@ -56,7 +56,12 @@ function smartTruncate(text, maxChars) {
   return text.substring(0, finalTruncateIdx).trim() + "\n\n[Content truncated for length]";
 }
 
+const skipPatterns = /(menu|nav|footer|header|sidebar|widget|ad-container|cookie|modal|popup|share)/i;
+
 function getCleanedTextContent(maxChars) {
+  const maxLimit = maxChars || 15000;
+  const bufferLimit = maxLimit + 1000;
+
   // Priority containers: article, main, then fallback to body
   const prioritySelectors = ['article', 'main', '#content', '.content', 'body'];
   let rootElement = document.body;
@@ -75,9 +80,6 @@ function getCleanedTextContent(maxChars) {
     'ASIDE', 'AUDIO', 'VIDEO', 'CANVAS', 'SELECT', 'OPTION', 'BUTTON'
   ]);
   
-  // Custom classes/ids to skip (commonly navigation, sidebars, menus, footers)
-  const skipPatterns = /(menu|nav|footer|header|sidebar|widget|ad-container|cookie|modal|popup|share)/i;
-
   const textNodes = [];
   let totalLength = 0;
 
@@ -86,6 +88,11 @@ function getCleanedTextContent(maxChars) {
     NodeFilter.SHOW_TEXT,
     {
       acceptNode: function(node) {
+        // Exit early if we already have enough text
+        if (totalLength >= bufferLimit) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
         const parent = node.parentElement;
         if (!parent) return NodeFilter.FILTER_REJECT;
         
@@ -99,11 +106,10 @@ function getCleanedTextContent(maxChars) {
           if (skipTags.has(current.tagName)) {
             return NodeFilter.FILTER_REJECT;
           }
-          const className = current.className || "";
-          const idName = current.id || "";
+          const className = String(current.className || "");
+          const idName = String(current.id || "");
           
-          if ((typeof className === 'string' && skipPatterns.test(className)) || 
-              (typeof idName === 'string' && skipPatterns.test(idName))) {
+          if (skipPatterns.test(className) || skipPatterns.test(idName)) {
             return NodeFilter.FILTER_REJECT;
           }
           current = current.parentElement;
@@ -116,11 +122,11 @@ function getCleanedTextContent(maxChars) {
   );
 
   let node;
-  const maxLimit = maxChars || 15000;
   let iterations = 0;
   const maxIterations = 5000;
 
-  while ((node = treeWalker.nextNode()) && totalLength < maxLimit && iterations < maxIterations) {
+  // Reordered conditions to short-circuit before nextNode() gets called
+  while (totalLength < bufferLimit && iterations < maxIterations && (node = treeWalker.nextNode())) {
     iterations++;
     const text = node.nodeValue.trim();
     if (text) {

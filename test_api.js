@@ -10,15 +10,22 @@ if (typeof fetch === 'undefined') {
   process.exit(1);
 }
 
+// Detect if colors are supported by the terminal environment
+const useColors = process.stdout.isTTY && 
+                  (process.platform !== 'win32' || 
+                   process.env.TERM || 
+                   process.env.COLORTERM || 
+                   process.env.WT_SESSION);
+
 // ANSI Color codes for pretty terminal output
 const colors = {
-  reset: "\x1b[0m",
-  bright: "\x1b[1m",
-  red: "\x1b[31m",
-  green: "\x1b[32m",
-  yellow: "\x1b[33m",
-  blue: "\x1b[34m",
-  cyan: "\x1b[36m"
+  reset: useColors ? "\x1b[0m" : "",
+  bright: useColors ? "\x1b[1m" : "",
+  red: useColors ? "\x1b[31m" : "",
+  green: useColors ? "\x1b[32m" : "",
+  yellow: useColors ? "\x1b[33m" : "",
+  blue: useColors ? "\x1b[34m" : "",
+  cyan: useColors ? "\x1b[36m" : ""
 };
 
 // Call API completions endpoint

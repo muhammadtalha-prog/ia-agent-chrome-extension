@@ -8,6 +8,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const settingsForm = document.getElementById('settings-form');
   const btnClearHistory = document.getElementById('btn-clear-history');
   const toast = document.getElementById('toast');
+  
+  const keyFormatHint = document.getElementById('key-format-hint');
+  const charLimitWarning = document.getElementById('char-limit-warning');
 
   const defaultPrompt = "You are IA Agent, a helpful, intelligent browser assistant. You analyze the text content of the user's active webpage and answer questions or write summaries based on it. Keep responses clear, concise, and structured.";
 
@@ -44,6 +47,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Auto-detect preset or select custom
     const savedPreset = items.selectedPreset || detectPreset(apiUrlInput.value, modelInput.value);
     providerPreset.value = savedPreset;
+    
+    // Initial validation check
+    validateApiKey();
   });
 
   // Helper to detect preset from URL and Model
@@ -56,6 +62,34 @@ document.addEventListener('DOMContentLoaded', () => {
     return 'custom';
   }
 
+  // Helper to validate key format based on preset and display hint
+  function validateApiKey() {
+    const preset = providerPreset.value;
+    const key = apiKeyInput.value.trim();
+    
+    if (!key) {
+      keyFormatHint.style.display = 'none';
+      return true;
+    }
+    
+    if (preset === 'deepseek' && !key.startsWith('sk-')) {
+      keyFormatHint.textContent = "⚠️ Hint: DeepSeek API keys typically start with 'sk-'.";
+      keyFormatHint.style.display = 'block';
+      return false;
+    } else if (preset === 'groq' && !key.startsWith('gsk_')) {
+      keyFormatHint.textContent = "⚠️ Hint: Groq API keys typically start with 'gsk_'.";
+      keyFormatHint.style.display = 'block';
+      return false;
+    } else if (preset === 'xai-grok' && !key.startsWith('xai-') && !key.startsWith('sk-')) {
+      keyFormatHint.textContent = "⚠️ Hint: xAI Grok API keys typically start with 'xai-' or 'sk-'.";
+      keyFormatHint.style.display = 'block';
+      return false;
+    } else {
+      keyFormatHint.style.display = 'none';
+      return true;
+    }
+  }
+
   // Handle Preset Changes
   providerPreset.addEventListener('change', () => {
     const selected = providerPreset.value;
@@ -63,18 +97,32 @@ document.addEventListener('DOMContentLoaded', () => {
       apiUrlInput.value = presets[selected].url;
       modelInput.value = presets[selected].model;
     }
+    validateApiKey();
   });
+
+  // Run validation on key input changes
+  apiKeyInput.addEventListener('input', validateApiKey);
 
   // Save settings
   settingsForm.addEventListener('submit', (e) => {
     e.preventDefault();
 
     const maxChars = parseInt(maxCharactersInput.value, 10);
+    
+    // Validate character limit range input
+    if (isNaN(maxChars) || maxChars < 1000 || maxChars > 100000) {
+      charLimitWarning.style.display = 'block';
+      maxCharactersInput.focus();
+      return;
+    } else {
+      charLimitWarning.style.display = 'none';
+    }
+
     const settings = {
       apiKey: apiKeyInput.value.trim(),
       apiUrl: apiUrlInput.value.trim(),
       modelName: modelInput.value.trim(),
-      maxCharacters: isNaN(maxChars) ? 15000 : maxChars,
+      maxCharacters: maxChars,
       systemPrompt: systemPromptInput.value.trim(),
       selectedPreset: providerPreset.value
     };
@@ -84,11 +132,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Handle Clear Chat History
+  // Handle Clear Chat History (Reverted to chrome.storage.local)
   btnClearHistory.addEventListener('click', () => {
     const confirmClear = confirm("Are you sure you want to clear all chat history? This cannot be undone.");
     if (confirmClear) {
-      chrome.storage.session.remove(['globalChatHistory'], () => {
+      chrome.storage.local.remove(['globalChatHistory'], () => {
         showToast("Chat history cleared!");
       });
     }
