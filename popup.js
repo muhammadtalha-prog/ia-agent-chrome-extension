@@ -575,11 +575,53 @@ document.addEventListener('DOMContentLoaded', () => {
     if (role === 'user') {
       msgDiv.textContent = text;
     } else {
-      msgDiv.innerHTML = formatMarkdown(text);
+      // Create content container for styling isolation
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'message-content';
+      contentDiv.innerHTML = formatMarkdown(text);
+      msgDiv.appendChild(contentDiv);
+
       if (isError) {
         msgDiv.style.borderColor = 'rgba(239, 68, 68, 0.4)';
         msgDiv.style.background = 'rgba(239, 68, 68, 0.05)';
         msgDiv.style.color = '#f87171';
+      }
+
+      // Add copy button to bottom of assistant/agent message cards (excluding system notifications)
+      const isSystemMsg = text.startsWith('⚠️') || text.startsWith('🧹') || text.startsWith('❌') || text.startsWith('🚀') || text.startsWith('📋');
+      if (!isError && text && !isSystemMsg) {
+        const footerDiv = document.createElement('div');
+        footerDiv.className = 'message-copy-container';
+        
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'btn-copy-message';
+        copyBtn.title = 'Copy message';
+        copyBtn.innerHTML = `
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+          <span>Copy</span>
+        `;
+        
+        copyBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          copyToClipboard(text)
+            .then(() => {
+              copyBtn.querySelector('span').textContent = 'Copied!';
+              copyBtn.style.color = 'var(--success)';
+              setTimeout(() => {
+                copyBtn.querySelector('span').textContent = 'Copy';
+                copyBtn.style.color = 'var(--text-muted)';
+              }, 2000);
+            })
+            .catch(err => {
+              console.error("Failed to copy message:", err);
+            });
+        });
+        
+        footerDiv.appendChild(copyBtn);
+        msgDiv.appendChild(footerDiv);
       }
     }
     
