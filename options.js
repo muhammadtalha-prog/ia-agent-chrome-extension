@@ -43,8 +43,8 @@ document.addEventListener('DOMContentLoaded', () => {
     'customSelectors'
   ], (items) => {
     apiKeyInput.value = items.apiKey || '';
-    apiUrlInput.value = items.apiUrl || 'https://api.deepseek.com/chat/completions';
-    modelInput.value = items.modelName || 'deepseek-chat';
+    apiUrlInput.value = items.apiUrl || 'https://api.x.ai/v1/chat/completions';
+    modelInput.value = items.modelName || 'grok-2-1212';
     maxCharactersInput.value = items.maxCharacters || 15000;
     systemPromptInput.value = items.systemPrompt || defaultPrompt;
     customSelectorsInput.value = items.customSelectors || '';

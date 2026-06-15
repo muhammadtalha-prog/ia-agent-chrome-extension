@@ -57,8 +57,8 @@ async function handleAgentQuery(request) {
   });
 
   const apiKey = settings.apiKey !== undefined ? settings.apiKey : '';
-  const apiUrl = settings.apiUrl || 'https://api.deepseek.com/chat/completions';
-  const modelName = settings.modelName || 'deepseek-chat';
+  const apiUrl = settings.apiUrl || 'https://api.x.ai/v1/chat/completions';
+  const modelName = settings.modelName || 'grok-2-1212';
   const systemPrompt = settings.systemPrompt || "You are IA Agent, a helpful, intelligent browser assistant.";
 
   const activeKey = apiKey;
@@ -140,7 +140,7 @@ Analyze the transcript, synthesize the details thoroughly, and generate the migr
 
 // Call API completions Endpoint (OpenAI Compatible)
 async function callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, apiKey, systemPrompt, apiUrl, signal) {
-  let url = apiUrl || "https://api.deepseek.com/chat/completions";
+  let url = apiUrl || "https://api.x.ai/v1/chat/completions";
   
   // Sanitize API URL: strip trailing slashes and collapse duplicate path slashes (//) while keeping protocol selector (://)
   let proto = "";
@@ -240,12 +240,12 @@ function generateMockResponse(prompt, pageContext, signal) {
 
 * **Goal:** Create a Chromium extension called 'IA Agent' for browser task migration.
 * **Progress:** Established the Manifest V3 structure, designed a premium dark glassmorphic popup, and implemented API integrations.
-* **Current State:** The files are written and the basic logic works. We simplified it to use DeepSeek API exclusively.
+* **Current State:** The files are written and the basic logic works. We simplified it to use Grok API exclusively.
 * **Next Step:** Perform manual extension installation and complete end-to-end user testing.`);
       } else if (lowerPrompt.includes("summarize") || lowerPrompt === "summarize this webpage") {
-        resolve(`### 📝 Page Summary for: *${pageTitle}*\n\nHere is a simulated summary of the webpage:\n\n1. **Core Subject:** This page appears to be titled **"${pageTitle}"**.\n2. **Clean Scraping:** I extracted the clean text from this tab successfully.\n3. **Key Highlights:**\n   - This is a preview of the **IA Agent** in action.\n   - Currently operating in **Simulated Mock Model** mode.\n   - Once you add a real API key in the settings, this extension will generate live summaries using DeepSeek API!\n\n*Feel free to ask questions about details on this page or change settings.*`);
+        resolve(`### 📝 Page Summary for: *${pageTitle}*\n\nHere is a simulated summary of the webpage:\n\n1. **Core Subject:** This page appears to be titled **"${pageTitle}"**.\n2. **Clean Scraping:** I extracted the clean text from this tab successfully.\n3. **Key Highlights:**\n   - This is a preview of the **IA Agent** in action.\n   - Currently operating in **Simulated Mock Model** mode.\n   - Once you add a real API key in the settings, this extension will generate live summaries using Grok API!\n\n*Feel free to ask questions about details on this page or change settings.*`);
       } else {
-        resolve(`🤖 **IA Agent (DeepSeek Simulated Mode)**\n\nI received your question: *"${prompt}"*\n\nSince no active API Key is entered in settings, I am responding in **Simulated Mode**. To get live DeepSeek responses, please configure your API key in Settings.`);
+        resolve(`🤖 **IA Agent (Grok Simulated Mode)**\n\nI received your question: *"${prompt}"*\n\nSince no active API Key is entered in settings, I am responding in **Simulated Mode**. To get live Grok responses, please configure your API key in Settings.`);
       }
     }, 1000);
 
