@@ -255,14 +255,27 @@ function scrapeChatConversation(customSelectorsRaw) {
     });
   } else if (url.includes("claude.ai")) {
     source = "Claude";
-    // Claude chat bubble containers
-    const elements = document.querySelectorAll('div[data-testid="user-message"], div.font-claude-message, .chat-message');
+    // Claude chat bubble containers with robust classes and data-testids
+    const elements = document.querySelectorAll('.font-user-message, .font-claude-message, [data-testid="user-message"], [data-testid="assistant-message"], [data-testid*="ai-turn"], .chat-message');
+    const processedNodes = [];
+    
     elements.forEach(node => {
-      const isUser = node.getAttribute('data-testid') === 'user-message' || node.classList.contains('user-message');
+      // Prevent duplicate parsing of nested elements (e.g. parent and child both matched)
+      if (processedNodes.some(pNode => pNode.contains(node) || node.contains(pNode))) {
+        return;
+      }
+      
+      const isUser = node.getAttribute('data-testid') === 'user-message' || 
+                     node.classList.contains('font-user-message') ||
+                     node.classList.contains('user-message');
       const role = isUser ? 'user' : 'assistant';
       const content = node.innerText || node.textContent;
       if (content) {
-        messages.push({ role, content: content.trim() });
+        const trimmed = content.trim();
+        if (trimmed.length > 0) {
+          messages.push({ role, content: trimmed });
+          processedNodes.push(node);
+        }
       }
     });
   } else if (url.includes("deepseek.com")) {
