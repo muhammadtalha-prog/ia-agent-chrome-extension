@@ -25,6 +25,8 @@
       <span class="logo-text">IA Agent</span>
     </div>
     <div style="display: flex; align-items: center; gap: 8px;">
+      <!-- API STATUS BADGE -->
+      <span id="api-badge" class="api-badge">SIMULATED</span>
       <div class="status-indicator">
         <div id="status-dot" class="status-dot"></div>
         <span id="status-text">Ready</span>
@@ -74,6 +76,16 @@
       <h2 class="welcome-title">IA Agent</h2>
       <p class="welcome-subtitle">Your intelligent web companion. Ask questions, get summaries, or extract context from the active page.</p>
       
+      <!-- API WARNING BANNER (appears when no key) -->
+      <div id="api-warning-banner" class="api-warning-banner" style="display: none;">
+        <div class="warning-icon">⚠️</div>
+        <div class="warning-content">
+          <strong>Running in Simulated Mode</strong>
+          <p>No API key configured. Get real responses by adding a key.</p>
+        </div>
+        <button id="btn-configure-now" class="btn-configure-now">Configure API Key</button>
+      </div>
+
       <div class="welcome-suggestions">
         <div class="suggestion-card" data-action="summarize">
           <span>📝 Summarize this webpage</span>

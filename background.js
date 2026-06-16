@@ -59,7 +59,7 @@ async function handleAgentQuery(request) {
   const apiKey = settings.apiKey !== undefined ? settings.apiKey : '';
   const apiUrl = settings.apiUrl || 'https://api.x.ai/v1/chat/completions';
   const modelName = settings.modelName || 'grok-2-1212';
-  const systemPrompt = settings.systemPrompt || "You are IA Agent, a helpful, intelligent browser assistant.";
+  const systemPrompt = settings.systemPrompt || "You are IA Agent, a highly capable and professional browser intelligence assistant. Analyze webpage content and provide clear, structured, and helpful responses.";
 
   const activeKey = apiKey;
 
@@ -207,9 +207,17 @@ async function callDeepSeekAPI(prompt, pageContext, chatHistory, modelName, apiK
       message = rawText.substring(0, 200).trim() || response.statusText;
     }
     
-    if (message.toLowerCase().includes("insufficient balance") || response.status === 402) {
-      message = "Insufficient Balance. Your API key has run out of funds. Please add funds to your account, or configure the extension to use a free local provider like Ollama in Settings.";
+    // Enhanced error messages for common issues
+    if (response.status === 401) {
+      message = "🔑 Invalid API Key. Your key appears to be incorrect or expired. Please check your API key in Settings and try again.";
+    } else if (response.status === 402 || message.toLowerCase().includes("insufficient balance")) {
+      message = "💳 Insufficient Balance. Your API key has run out of funds. Please add funds to your account or switch providers in Settings.";
+    } else if (response.status === 429) {
+      message = "⏳ Rate Limit Exceeded. You've made too many requests. Please wait a moment and try again.";
+    } else if (response.status === 500) {
+      message = "🔧 API Server Error. The provider's service is experiencing issues. Please try again later or switch providers.";
     }
+    
     throw new Error(`API Error (${response.status}): ${message}`);
   }
 

@@ -112,6 +112,52 @@ document.addEventListener('DOMContentLoaded', () => {
     checkMigrationBanner(url);
   }
 
+  // Check API configuration and update badge/warning
+  function checkApiStatus() {
+    chrome.storage.local.get(['apiKey', 'selectedPreset'], (items) => {
+      const apiKey = items.apiKey || '';
+      const preset = items.selectedPreset || 'deepseek';
+      const apiBadge = document.getElementById('api-badge');
+      const warningBanner = document.getElementById('api-warning-banner');
+      const hasKey = apiKey && apiKey.trim().length > 0;
+
+      if (hasKey) {
+        // Show provider name in badge
+        const presetNames = {
+          'deepseek': 'DEEPSEEK',
+          'xai-grok': 'GROK',
+          'groq': 'GROQ',
+          'custom': 'CUSTOM'
+        };
+        const displayName = presetNames[preset] || 'CUSTOM';
+        
+        if (apiBadge) {
+          apiBadge.textContent = displayName;
+          apiBadge.className = `api-badge connected ${preset}`;
+        }
+        
+        // Hide warning banner
+        if (warningBanner) {
+          warningBanner.style.display = 'none';
+        }
+      } else {
+        // Show SIMULATED badge
+        if (apiBadge) {
+          apiBadge.textContent = 'SIMULATED';
+          apiBadge.className = 'api-badge';
+        }
+        
+        // Show warning banner
+        if (warningBanner) {
+          warningBanner.style.display = 'flex';
+        }
+      }
+    });
+  }
+
+  // Initialize API Status
+  checkApiStatus();
+
   // 1. Initialize Active Tab and Context
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (tabs && tabs[0]) {
@@ -187,6 +233,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // 3. Setup Events
   btnSettings.addEventListener('click', openSettings);
   footerSettings.addEventListener('click', openSettings);
+  
+  const btnConfigureNow = document.getElementById('btn-configure-now');
+  if (btnConfigureNow) {
+    btnConfigureNow.addEventListener('click', openSettings);
+  }
 
   function openSettings() {
     chrome.runtime.openOptionsPage();

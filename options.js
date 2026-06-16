@@ -9,13 +9,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnClearHistory = document.getElementById('btn-clear-history');
   const btnPruneHistory = document.getElementById('btn-prune-history');
   const toast = document.getElementById('toast');
-  
+
   const keyFormatHint = document.getElementById('key-format-hint');
   const charLimitWarning = document.getElementById('char-limit-warning');
   const customSelectorsInput = document.getElementById('custom-selectors');
   const selectorFormatWarning = document.getElementById('selector-format-warning');
 
-  const defaultPrompt = "You are IA Agent, a helpful, intelligent browser assistant. You analyze the text content of the user's active webpage and answer questions or write summaries based on it. Keep responses clear, concise, and structured.";
+  const defaultPrompt = "You are IA Agent, a highly capable and professional browser intelligence assistant. Your primary task is to analyze the textual content of the user's active webpage. When answering questions or summarizing content, provide accurate, insightful, well-structured, and objective responses. Highlight key points, reference specific details from the page context, and adapt your style to be clear and helpful.";
 
   const presets = {
     'deepseek': {
@@ -48,11 +48,11 @@ document.addEventListener('DOMContentLoaded', () => {
     maxCharactersInput.value = items.maxCharacters || 15000;
     systemPromptInput.value = items.systemPrompt || defaultPrompt;
     customSelectorsInput.value = items.customSelectors || '';
-    
+
     // Auto-detect preset or select custom
     const savedPreset = items.selectedPreset || detectPreset(apiUrlInput.value, modelInput.value);
     providerPreset.value = savedPreset;
-    
+
     // Initial validation check
     validateApiKey();
   });
@@ -71,12 +71,12 @@ document.addEventListener('DOMContentLoaded', () => {
   function validateApiKey() {
     const preset = providerPreset.value;
     const key = apiKeyInput.value.trim();
-    
+
     if (!key) {
       keyFormatHint.style.display = 'none';
       return true;
     }
-    
+
     if (preset === 'deepseek' && !key.startsWith('sk-')) {
       keyFormatHint.textContent = "⚠️ Hint: DeepSeek API keys typically start with 'sk-'.";
       keyFormatHint.style.display = 'block';
@@ -124,7 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
 
     const maxChars = parseInt(maxCharactersInput.value, 10);
-    
+
     // Validate character limit range input
     if (isNaN(maxChars) || maxChars < 1000 || maxChars > 100000) {
       charLimitWarning.style.display = 'block';
@@ -185,7 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Keep messages that are recent, or have no timestamp as fallback
             return !msg.timestamp || msg.timestamp > sevenDaysAgo;
           });
-          
+
           chrome.storage.local.set({ globalChatHistory: pruned }, () => {
             showToast("Old messages pruned successfully!");
           });
