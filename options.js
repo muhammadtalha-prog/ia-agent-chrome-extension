@@ -77,16 +77,30 @@ document.addEventListener('DOMContentLoaded', () => {
       return true;
     }
 
+    // Auto-detect Groq keys and switch preset
+    if (key.startsWith('gsk_') && preset !== 'groq') {
+      providerPreset.value = 'groq';
+      apiUrlInput.value = presets['groq'].url;
+      modelInput.value = presets['groq'].model;
+      keyFormatHint.innerHTML = "✨ <strong>Auto-switched preset to Groq</strong> based on your API key format.";
+      keyFormatHint.style.color = '#10b981'; // Green success color
+      keyFormatHint.style.display = 'block';
+      return true;
+    }
+
     if (preset === 'deepseek' && !key.startsWith('sk-')) {
       keyFormatHint.textContent = "⚠️ Hint: DeepSeek API keys typically start with 'sk-'.";
+      keyFormatHint.style.color = '#fbbf24';
       keyFormatHint.style.display = 'block';
       return false;
     } else if (preset === 'groq' && !key.startsWith('gsk_')) {
       keyFormatHint.textContent = "⚠️ Hint: Groq API keys typically start with 'gsk_'.";
+      keyFormatHint.style.color = '#fbbf24';
       keyFormatHint.style.display = 'block';
       return false;
     } else if (preset === 'xai-grok' && !key.startsWith('xai-') && !key.startsWith('sk-')) {
       keyFormatHint.textContent = "⚠️ Hint: xAI Grok API keys typically start with 'xai-' or 'sk-'.";
+      keyFormatHint.style.color = '#fbbf24';
       keyFormatHint.style.display = 'block';
       return false;
     } else {

@@ -129,11 +129,19 @@ document.addEventListener('DOMContentLoaded', () => {
           'groq': 'GROQ',
           'custom': 'CUSTOM'
         };
-        const displayName = presetNames[preset] || 'CUSTOM';
+        
+        let activePreset = preset;
+        let displayName = presetNames[preset] || 'CUSTOM';
+
+        // Auto-route Groq key to correct UI presentation
+        if (apiKey.startsWith('gsk_')) {
+          activePreset = 'groq';
+          displayName = 'GROQ';
+        }
         
         if (apiBadge) {
           apiBadge.textContent = displayName;
-          apiBadge.className = `api-badge connected ${preset}`;
+          apiBadge.className = `api-badge connected ${activePreset}`;
         }
         
         // Hide warning banner

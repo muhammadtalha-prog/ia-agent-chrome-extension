@@ -56,9 +56,16 @@ async function handleAgentQuery(request) {
     });
   });
 
-  const apiKey = settings.apiKey !== undefined ? settings.apiKey : '';
-  const apiUrl = settings.apiUrl || 'https://api.x.ai/v1/chat/completions';
-  const modelName = settings.modelName || 'grok-2-1212';
+  let apiKey = settings.apiKey !== undefined ? settings.apiKey : '';
+  let apiUrl = settings.apiUrl || 'https://api.x.ai/v1/chat/completions';
+  let modelName = settings.modelName || 'grok-2-1212';
+  
+  // Smart Auto-Routing: If API Key is Groq format (gsk_...) but URL is configured for xAI/DeepSeek, route to Groq
+  if (apiKey.startsWith('gsk_') && (apiUrl.includes('api.x.ai') || apiUrl.includes('api.deepseek.com'))) {
+    apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
+    modelName = 'llama-3.3-70b-versatile';
+  }
+
   const systemPrompt = settings.systemPrompt || "You are IA Agent, a highly capable and professional browser intelligence assistant. Analyze webpage content and provide clear, structured, and helpful responses.";
 
   const activeKey = apiKey;
